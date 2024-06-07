@@ -1,4 +1,4 @@
 transformers==4.12.3
-torch==1.10.0
 Pillow==8.4.0
 numpy==1.21.2
+# Add other necessary dependencies without specifying torch again
