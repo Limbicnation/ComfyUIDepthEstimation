@@ -9,9 +9,7 @@ from torchvision.transforms import Compose
 import cv2
 import torch.nn.functional as F
 from einops import repeat
-import json
 
-# Define common_input_validate function
 def common_input_validate(input_image, output_type, **kwargs):
     if isinstance(input_image, Image.Image):
         input_image = np.array(input_image)
@@ -23,7 +21,6 @@ def common_input_validate(input_image, output_type, **kwargs):
         output_type = "np"
     return input_image, output_type
 
-# Define resize_image_with_pad function
 def resize_image_with_pad(image, resolution, interpolation=cv2.INTER_CUBIC):
     h, w = image.shape[:2]
     scale = resolution / min(h, w)
@@ -101,9 +98,6 @@ class DepthEstimationNode:
         self.median_size = self.ensure_odd(5)
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.detector = self.initialize_detector()
-        self.counter = 0  # Initialize a counter for image saving
-        self.output_dir = "output"  # Example output directory
-        self.output_subfolder = "default"
 
     def initialize_detector(self):
         """Initialize the depth estimation detector with detailed logging."""
@@ -145,28 +139,19 @@ class DepthEstimationNode:
         table = np.array(table, np.uint8)
         return Image.fromarray(np.array(img).astype(np.uint8)).point(lambda i: table[i])
 
-    def auto_gamma_correction(self, image):
-        """Automatically adjust gamma correction for the image."""
-        image_array = np.array(image).astype(np.float32) / 255.0
-        mean_luminance = np.mean(image_array)
-        gamma = np.log(0.5) / np.log(mean_luminance)
-        return self.gamma_correction(image, gamma=gamma)
-
-    def auto_contrast(self, image):
-        """Apply automatic contrast adjustment to the image."""
-        return ImageOps.autocontrast(image)
-
     def process_image(self, image, blur_radius, median_size):
         # Ensure detector is initialized
         if self.detector is None:
             raise RuntimeError("Pipeline not initialized properly.")
-        
+
         # Convert image to numpy array
         np_image = np.array(image)
 
-        # Ensure the data type is uint8
+        # Ensure the data type is uint8 and has 3 channels
         if np_image.dtype != np.uint8:
             np_image = np_image.astype(np.uint8)
+        if np_image.shape[2] == 4:
+            np_image = np_image[:, :, :3]
 
         # Run the detector
         detected_map = self.detector(input_image=np_image, output_type="pil")
@@ -192,7 +177,7 @@ class DepthEstimationNode:
         gamma_corrected_image = self.gamma_correction(combined_image, gamma=0.7)
 
         # Apply auto contrast
-        final_image = self.auto_contrast(gamma_corrected_image)
+        final_image = ImageOps.autocontrast(gamma_corrected_image)
 
         # Additional post-processing: Sharpen the final image
         final_image = final_image.filter(ImageFilter.SHARPEN)
@@ -207,6 +192,8 @@ class DepthEstimationNode:
             if image.ndim == 4 and image.shape[0] == 1:
                 image = image[0]  # Remove the batch dimension if present
             image = image.astype(np.uint8)
+            if image.shape[2] == 4:
+                image = image[:, :, :3]
             image = Image.fromarray(image)
         if not isinstance(image, Image.Image):
             raise ValueError("Input should be a PIL Image or a Tensor convertible to a PIL Image")
@@ -217,54 +204,6 @@ class DepthEstimationNode:
         final_image = self.process_image(image, blur_radius, median_size)
         return (final_image, )
 
-    def save_images(self, images, filename_prefix="output", counter=None, subfolder=None, prompt=None, extra_pnginfo=None, counter_digits=4, counter_position='last', delimiter_char='_'):
-        if not isinstance(images, (list, tuple)):
-            images = [images]
-        if counter is None:
-            counter = self.counter
-        if subfolder is None:
-            subfolder = self.output_subfolder
-
-        # Convert the first image to a NumPy array to access its shape
-        if isinstance(images[0], Image.Image):
-            image_array = np.array(images[0])
-            height, width = image_array.shape[:2]
-        else:
-            height, width = images[0].shape[:2]
-
-        full_output_folder, filename, counter, subfolder, filename_prefix = folder_paths.get_save_image_path(
-            filename_prefix, self.output_dir, width, height)
-        os.makedirs(full_output_folder, exist_ok=True)
-
-        for i, image in enumerate(images):
-            if isinstance(image, torch.Tensor):
-                image = image.cpu().numpy()
-            if isinstance(image, np.ndarray):
-                if image.ndim == 4 and image.shape[0] == 1:
-                    image = image[0]  # Remove the batch dimension if present
-                image = image.astype(np.uint8)
-                image = Image.fromarray(image)
-            if not isinstance(image, Image.Image):
-                raise ValueError("Input should be a PIL Image or a Tensor convertible to a PIL Image")
-
-            # Save the image with metadata as a JSON sidecar file
-            file_basename = f'{filename_prefix}_{counter + i:04d}_{filename}'
-            image_path = os.path.join(full_output_folder, f'{file_basename}.png')
-            image.save(image_path, compress_level=4)
-
-            # Save metadata as a JSON file
-            if prompt or extra_pnginfo:
-                metadata = {
-                    'prompt': json.dumps(prompt) if prompt else None,
-                    'extra_pnginfo': {key: json.dumps(value) for key, value in extra_pnginfo.items()} if extra_pnginfo else None
-                }
-                metadata_path = os.path.join(full_output_folder, f'{file_basename}.json')
-                with open(metadata_path, 'w') as f:
-                    json.dump(metadata, f, indent=4)
-
-        self.counter = counter + len(images)
-        return images
-
 NODE_CLASS_MAPPINGS = {
     "DepthEstimationNode": DepthEstimationNode
 }
@@ -272,21 +211,3 @@ NODE_CLASS_MAPPINGS = {
 NODE_DISPLAY_NAME_MAPPINGS = {
     "DepthEstimationNode": "Depth Estimation Node"
 }
-
-# Corrected sharpen function
-def sharpen(image):
-    # Check if the input is a PIL Image and convert it to a NumPy array
-    if isinstance(image, Image.Image):
-        image = np.array(image)
-    
-    # Now you can access the shape attribute
-    height, width, channels = image.shape
-    
-    # Perform the sharpen operation (this is a placeholder for the actual logic)
-    # For demonstration, let's assume the operation is simply returning the image as is
-    sharpened_image = image  # Replace this with the actual sharpening logic
-    
-    # Convert the NumPy array back to a PIL Image if needed
-    sharpened_image = Image.fromarray(sharpened_image.astype('uint8'))
-    
-    return sharpened_image
