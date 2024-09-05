@@ -1,0 +1,27 @@
+# Handle line endings (CRLF for Windows, LF for Unix)
+* text=auto
+
+# Ensure Python files use LF for Unix compatibility
+*.py text eol=lf
+
+# Treat Markdown and YAML files as text
+*.md text
+*.yaml text
+*.yml text
+
+# Handle images and binaries as binary
+*.png binary
+*.jpg binary
+*.zip binary
+
+# Handle compiled files as binary (just in case you have any)
+*.exe binary
+*.dll binary
+*.so binary
+
+# Ensure JSON files use LF line endings
+*.json text eol=lf
+
+# Handle Node.js package lock file (if relevant)
+package-lock.json merge=union
+
