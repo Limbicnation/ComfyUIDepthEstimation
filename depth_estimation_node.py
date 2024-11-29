@@ -1,6 +1,5 @@
 """
-ComfyUI Depth Estimation Node - Verified and Enhanced Version
-A custom node for depth map estimation using transformer models.
+ComfyUI Depth Estimation Node - Using Depth-Anything models
 """
 
 import os
@@ -11,52 +10,30 @@ from PIL import Image, ImageFilter, ImageOps
 import folder_paths
 from comfy.model_management import get_torch_device
 
-def ensure_odd(value):
-    """Ensure the value is an odd integer."""
-    value = int(value)
-    return value if value % 2 == 1 else value + 1
+DEPTH_MODELS = {
+    "Depth-Anything-Small": "LiheYoung/depth-anything-small",
+    "Depth-Anything-Base": "LiheYoung/depth-anything-base",
+    "Depth-Anything-Large": "LiheYoung/depth-anything-large",
+    "Depth-Anything-V2-Small": "LiheYoung/depth-anything-small-hf",
+    "Depth-Anything-V2-Base": "LiheYoung/depth-anything-base-hf",
+}
 
-def convert_path(path):
-    """Convert path for compatibility between Windows and WSL."""
-    if os.name == 'nt':
-        return path.replace('\\', '/')
-    return path
-
-def gamma_correction(img, gamma=1.0):
-    """Apply gamma correction to the image."""
-    if not isinstance(img, (Image.Image, np.ndarray)):
-        raise TypeError("Input must be PIL Image or numpy array")
-    
-    inv_gamma = 1.0 / gamma
-    table = [((i / 255.0) ** inv_gamma) * 255 for i in range(256)]
-    table = np.array(table, np.uint8)
-    return Image.fromarray(np.array(img).astype(np.uint8)).point(lambda i: table[i])
-
-def auto_gamma_correction(image):
-    """Automatically adjust gamma correction for the image."""
-    image_array = np.array(image).astype(np.float32) / 255.0
-    mean_luminance = np.mean(image_array)
-    if mean_luminance <= 0:
-        return image
-    gamma = np.log(0.5) / np.log(mean_luminance)
-    return gamma_correction(image, gamma=gamma)
-
-def auto_contrast(image):
-    """Apply automatic contrast adjustment to the image."""
-    return ImageOps.autocontrast(image)
+MEDIAN_SIZES = ["3", "5", "7", "9", "11"]  # Define valid median sizes as strings
 
 class DepthEstimationNode:
     def __init__(self):
         self.device = get_torch_device()
         self.depth_estimator = None
+        self.current_model = None
         
     @classmethod
     def INPUT_TYPES(cls):
         return {
             "required": {
                 "image": ("IMAGE",),
-                "blur_radius": ("FLOAT", {"default": 2.0, "min": 0.0, "max": 10.0}),
-                "median_size": ("INT", {"default": 5, "min": 3, "max": 11, "step": 2}),
+                "model_name": (list(DEPTH_MODELS.keys()),),  # Model dropdown
+                "blur_radius": ("FLOAT", {"default": 2.0, "min": 0.0, "max": 10.0, "step": 0.5}),
+                "median_size": (MEDIAN_SIZES,),  # Median size dropdown
                 "apply_auto_contrast": ("BOOLEAN", {"default": True}),
                 "apply_gamma": ("BOOLEAN", {"default": True})
             }
@@ -64,66 +41,90 @@ class DepthEstimationNode:
 
     RETURN_TYPES = ("IMAGE",)
     FUNCTION = "estimate_depth"
-    CATEGORY = "image/processing"
+    CATEGORY = "image/depth"
 
-    def ensure_model_loaded(self):
+    def ensure_model_loaded(self, model_name):
         """Ensure the depth estimation model is loaded."""
-        if self.depth_estimator is None:
+        model_path = DEPTH_MODELS[model_name]
+        if self.depth_estimator is None or self.current_model != model_path:
             try:
-                self.depth_estimator = pipeline("depth-estimation", device=self.device)
+                self.depth_estimator = pipeline(
+                    "depth-estimation",
+                    model=model_path,
+                    device=self.device
+                )
+                self.current_model = model_path
             except Exception as e:
-                raise RuntimeError(f"Failed to load depth estimation model: {str(e)}")
+                raise RuntimeError(f"Failed to load model {model_name}: {str(e)}")
 
-    def estimate_depth(self, image, blur_radius=2.0, median_size=5, 
+    def estimate_depth(self, image, model_name, blur_radius=2.0, median_size="3", 
                       apply_auto_contrast=True, apply_gamma=True):
         """
         Estimate depth from input image with optional post-processing.
-        
-        Args:
-            image (torch.Tensor): Input image tensor (B,H,W,C)
-            blur_radius (float): Gaussian blur radius
-            median_size (int): Median filter kernel size
-            apply_auto_contrast (bool): Whether to apply automatic contrast
-            apply_gamma (bool): Whether to apply gamma correction
-            
-        Returns:
-            tuple(torch.Tensor): Processed depth map tensor (B,H,W)
         """
-        self.ensure_model_loaded()
+        self.ensure_model_loaded(model_name)
         
-        # Input validation
-        if not isinstance(image, np.ndarray) or image.ndim != 4:
-            raise ValueError("Input image must be 4D numpy array (B,H,W,C)")
+        # Convert median_size from string to int
+        median_size_int = int(median_size)
         
-        # Convert image to PIL
-        image_pil = Image.fromarray((image[0] * 255).astype(np.uint8))
+        # Convert tensor to numpy if needed
+        if torch.is_tensor(image):
+            image = image.cpu().numpy()
+            
+        # Ensure image is in range [0, 1]
+        if image.max() > 1.0:
+            image = image / 255.0
+            
+        # Convert to RGB if necessary
+        if image.shape[-1] == 4:  # RGBA to RGB
+            image = image[..., :3]
+            
+        # Convert to PIL Image for processing
+        pil_image = Image.fromarray((image[0] * 255).astype(np.uint8))
         
         try:
             # Generate depth map
-            depth_map = self.depth_estimator(image_pil)["depth"]
+            depth_map = self.depth_estimator(pil_image)["predicted_depth"]
+            
+            # Convert depth map to PIL Image if it's not already
+            if not isinstance(depth_map, Image.Image):
+                # Normalize depth values to 0-255 range
+                depth_map = ((depth_map - depth_map.min()) * (255 / (depth_map.max() - depth_map.min()))).astype(np.uint8)
+                depth_map = Image.fromarray(depth_map)
             
             # Post-processing pipeline
-            median_size = ensure_odd(median_size)  # Ensure odd kernel size
-            
             if blur_radius > 0:
                 depth_map = depth_map.filter(ImageFilter.GaussianBlur(radius=blur_radius))
             
-            depth_map = depth_map.filter(ImageFilter.MedianFilter(size=median_size))
+            depth_map = depth_map.filter(ImageFilter.MedianFilter(size=median_size_int))
             
             if apply_auto_contrast:
-                depth_map = auto_contrast(depth_map)
+                depth_map = ImageOps.autocontrast(depth_map)
             
             if apply_gamma:
-                depth_map = auto_gamma_correction(depth_map)
+                depth_array = np.array(depth_map).astype(np.float32) / 255.0
+                mean_luminance = np.mean(depth_array)
+                if mean_luminance > 0:
+                    gamma = np.log(0.5) / np.log(mean_luminance)
+                    depth_map = self.gamma_correction(depth_map, gamma)
             
-            # Convert to tensor format
-            depth_tensor = np.array(depth_map).astype(np.float32) / 255.0
-            depth_tensor = depth_tensor[None, ...]  # Add batch dimension
+            # Convert to numpy array and normalize
+            depth_array = np.array(depth_map).astype(np.float32) / 255.0
+            
+            # Add batch and channel dimensions to match ComfyUI format (B,H,W,C)
+            depth_tensor = depth_array[None, ..., None]
             
             return (depth_tensor,)
             
         except Exception as e:
             raise RuntimeError(f"Depth estimation failed: {str(e)}")
+
+    def gamma_correction(self, img, gamma=1.0):
+        """Apply gamma correction to the image."""
+        inv_gamma = 1.0 / gamma
+        table = [((i / 255.0) ** inv_gamma) * 255 for i in range(256)]
+        table = np.array(table, np.uint8)
+        return Image.fromarray(np.array(img).astype(np.uint8)).point(lambda i: table[i])
 
 # Node registration
 NODE_CLASS_MAPPINGS = {

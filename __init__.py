@@ -1,6 +1,6 @@
 """
 ComfyUI Depth Estimation Node
-A custom node for depth map estimation using transformer models.
+A custom node for depth map estimation using Depth-Anything-V2-Small model.
 """
 
 from .depth_estimation_node import DepthEstimationNode
