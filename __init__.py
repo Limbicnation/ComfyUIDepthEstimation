@@ -1,11 +1,11 @@
-from .your_node_file import ComfyUIDepthEstimationNode
+from .depth_estimation_node import DepthEstimationNode
 
 NODE_CLASS_MAPPINGS = {
-    "ComfyUIDepthEstimationNode": ComfyUIDepthEstimationNode
+    "DepthEstimationNode": DepthEstimationNode
 }
 
 NODE_DISPLAY_NAME_MAPPINGS = {
-    "ComfyUIDepthEstimationNode": "Depth Estimation Node"
+    "DepthEstimationNode": "Depth Estimation Node"
 }
 
 __all__ = ["NODE_CLASS_MAPPINGS", "NODE_DISPLAY_NAME_MAPPINGS"]
