@@ -1,6 +1,8 @@
----
+## <img src="images/depth-estimation-icon.svg" width="32" height="32" alt="Depth Estimation Icon" style="vertical-align: middle"> ComfyUIDepthEstimation ComfyUIDepthEstimation
 
-# 📐 ComfyUIDepthEstimation
+<div align="center">
+  <img src="images/depth-estimation-icon.svg" width="150" height="150" alt="Depth Estimation Logo">
+</div>
 
 A custom depth estimation node for ComfyUI using Depth-Anything models to generate depth maps from images.
 
@@ -18,9 +20,7 @@ A custom depth estimation node for ComfyUI using Depth-Anything models to genera
   - Gamma correction
 
 ## Installation
-
 1. Clone the repository:
-
    ```bash
    git clone https://github.com/yourusername/ComfyUIDepthEstimation.git
    ```
@@ -39,7 +39,13 @@ A custom depth estimation node for ComfyUI using Depth-Anything models to genera
 
 # Usage
 
+<div align="center">
+  <img src="images/depth-estimation-node.png" width="600" alt="Depth Estimation Node Preview">
+</div>
+
 ## Node Parameters
+
+Node Parameters
 
 image: Input image (IMAGE type)
 model_name: Select from available Depth-Anything models
