@@ -2,14 +2,20 @@
 
 # 📐 ComfyUIDepthEstimation
 
-A custom depth estimation node for ComfyUI using transformer models. It integrates depth estimation with automatic gamma correction, contrast adjustment, and edge detection, based on the [TransformDepth](https://github.com/Limbicnation/TransformDepth) repository.
+A custom depth estimation node for ComfyUI using Depth-Anything models to generate depth maps from images.
 
 ## Features
-
-- Depth estimation using a transformer model
-- Automatic gamma correction
-- Automatic contrast adjustment
-- Edge detection and blurring
+- Multiple model options:
+  - Depth-Anything-Small
+  - Depth-Anything-Base
+  - Depth-Anything-Large
+  - Depth-Anything-V2-Small
+  - Depth-Anything-V2-Base
+- Post-processing options:
+  - Gaussian blur (adjustable radius)
+  - Median filtering (configurable size)
+  - Automatic contrast enhancement
+  - Gamma correction
 
 ## Installation
 
@@ -31,7 +37,16 @@ A custom depth estimation node for ComfyUI using transformer models. It integrat
    pip install -r requirements.txt
    ```
 
-## Usage
+# Usage
+
+## Node Parameters
+
+image: Input image (IMAGE type)
+model_name: Select from available Depth-Anything models
+blur_radius: Gaussian blur radius (0.0 - 10.0, default: 2.0)
+median_size: Median filter size (3, 5, 7, 9, 11)
+apply_auto_contrast: Enable automatic contrast enhancement
+apply_gamma: Enable gamma correction
 
 ### Integrate with ComfyUI
 
@@ -42,15 +57,16 @@ A custom depth estimation node for ComfyUI using transformer models. It integrat
 3. Restart ComfyUI to load the new custom node.
 
 ### Example Usage
+1. Add the `Depth Estimation` node to your ComfyUI workflow
+2. Connect an image source to the node's image input
+3. Configure the parameters:
+   - Select a model (e.g., "Depth-Anything-V2-Small")
+   - Adjust blur_radius (0-10) for depth map smoothing
+   - Choose median_size (3-11) for noise reduction
+   - Toggle auto_contrast and gamma correction as needed
+4. Connect the output to a Preview Image node or other image processing nodes
 
-1. Add the `ComfyUIDepthEstimationNode` to your pipeline in ComfyUI.
-
-2. Configure the node with the necessary parameters:
-   - `image_path`: Path to the input image.
-   - `output_path`: Path to save the processed image.
-   - `blur_radius`: Radius for Gaussian Blur.
-   - `median_size`: Size for Median Filter.
-   - `device`: Device to use for inference (cpu or gpu).
+The node will process the input image and output a depth map that can be used in your ComfyUI workflow.
 
 ## License
 
