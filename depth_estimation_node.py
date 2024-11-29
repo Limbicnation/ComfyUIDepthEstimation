@@ -3,7 +3,8 @@ import numpy as np
 import torch
 from transformers import pipeline
 from PIL import Image, ImageFilter, ImageOps
-from comfy.nodes import Node, register_node
+import folder_paths
+from comfy.model_management import get_torch_device
 
 def ensure_odd(value):
     """Ensure the value is an odd integer."""
@@ -34,75 +35,52 @@ def auto_contrast(image):
     """Apply automatic contrast adjustment to the image."""
     return ImageOps.autocontrast(image)
 
-class DepthEstimationNode(Node):
-    def __init__(self, blur_radius=2.0, median_size=5, device="cpu"):
-        super().__init__()
-        self.blur_radius = blur_radius
-        self.median_size = ensure_odd(median_size)
-        self.device = 0 if device == "gpu" and torch.cuda.is_available() else -1
-        self.pipe = pipeline(task="depth-estimation", model="LiheYoung/depth-anything-large-hf", device=self.device)
-
-    def process_image(self, image):
-        if self.device == 0:
-            image = image.convert("RGB")  # Ensure image is in RGB format
-            inputs = self.pipe.feature_extractor(images=image, return_tensors="pt").to(self.device)
-            with torch.no_grad():
-                outputs = self.pipe.model(**inputs)
-            result = self.pipe.post_process(outputs, (image.height, image.width))
-        else:
-            result = self.pipe(image)
-
-        # Convert depth data to a NumPy array if not already one
-        depth_data = np.array(result["depth"])
-
-        # Normalize and convert to uint8
-        depth_normalized = (depth_data - depth_data.min()) / (depth_data.max() - depth_data.min() + 1e-8)  # Avoid zero division
-        depth_uint8 = (255 * depth_normalized).astype(np.uint8)
-
-        # Create an image from the processed depth data
-        depth_image = Image.fromarray(depth_uint8)
-
-        # Apply a median filter to reduce noise
-        depth_image = depth_image.filter(ImageFilter.MedianFilter(size=self.median_size))
-
-        # Enhanced edge detection with more feathering
-        edges = depth_image.filter(ImageFilter.FIND_EDGES)
-        edges = edges.filter(ImageFilter.GaussianBlur(radius=2 * self.blur_radius))
-        edges = edges.point(lambda x: 255 if x > 20 else 0)  # Adjusted threshold
-
-        # Create a mask from the edges
-        mask = edges.convert("L")
-
-        # Blur only the edges using the mask
-        blurred_edges = depth_image.filter(ImageFilter.GaussianBlur(radius=self.blur_radius * 2))
-
-        # Combine the blurred edges with the original depth image using the mask
-        combined_image = Image.composite(blurred_edges, depth_image, mask)
-
-        # Apply auto gamma correction with a lower gamma to darken the image
-        gamma_corrected_image = gamma_correction(combined_image, gamma=0.7)
-
-        # Apply auto contrast
-        final_image = auto_contrast(gamma_corrected_image)
-
-        # Additional post-processing: Sharpen the final image
-        final_image = final_image.filter(ImageFilter.SHARPEN)
-
-        return final_image
-
-    def forward(self, image_path: str):
-        if not os.path.exists(image_path):
-            raise FileNotFoundError(f"The input image path does not exist: {image_path}")
-
-        image = Image.open(image_path)
-        return self.process_image(image)
-
-@register_node
-class ComfyUIDepthEstimationNode(DepthEstimationNode):
+class DepthEstimationNode:
     def __init__(self):
-        super().__init__(blur_radius=2.0, median_size=5, device="cpu")
+        self.device = get_torch_device()
+        self.depth_estimator = None
+        
+    @classmethod
+    def INPUT_TYPES(cls):
+        return {
+            "required": {
+                "image": ("IMAGE",),
+                "blur_radius": ("FLOAT", {"default": 2.0, "min": 0.0, "max": 10.0}),
+                "median_size": ("INT", {"default": 5, "min": 3, "max": 11, "step": 2})
+            }
+        }
 
-    def execute(self, image_path: str, output_path: str):
-        final_image = self.forward(image_path)
-        final_image.save(output_path)
-        print(f"Processed and saved: {output_path}")
+    RETURN_TYPES = ("IMAGE",)
+    FUNCTION = "estimate_depth"
+    CATEGORY = "image/depth"
+
+    def ensure_model_loaded(self):
+        if self.depth_estimator is None:
+            self.depth_estimator = pipeline("depth-estimation", device=self.device)
+
+    def estimate_depth(self, image, blur_radius=2.0, median_size=5):
+        self.ensure_model_loaded()
+        
+        # Convert image to PIL
+        image_pil = Image.fromarray((image[0] * 255).astype(np.uint8))
+        
+        # Process image
+        depth_map = self.depth_estimator(image_pil)["depth"]
+        
+        # Post-processing
+        depth_map = depth_map.filter(ImageFilter.GaussianBlur(radius=blur_radius))
+        depth_map = depth_map.filter(ImageFilter.MedianFilter(size=median_size))
+        
+        # Convert back to tensor format
+        depth_tensor = np.array(depth_map).astype(np.float32) / 255.0
+        depth_tensor = depth_tensor[None, ...]
+        
+        return (depth_tensor,)
+
+NODE_CLASS_MAPPINGS = {
+    "DepthEstimationNode": DepthEstimationNode
+}
+
+NODE_DISPLAY_NAME_MAPPINGS = {
+    "DepthEstimationNode": "Depth Estimation"
+}
