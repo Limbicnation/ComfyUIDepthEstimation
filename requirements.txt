@@ -1,4 +1,8 @@
-transformers==4.12.3
-Pillow==8.4.0
-numpy==1.21.2
-# Add other necessary dependencies without specifying torch again
+# Core dependencies matching ComfyUI
+torch>=2.0.0
+transformers>=4.28.1
+Pillow>=9.0.0
+numpy>=1.21.2
+
+# Additional dependencies specific to depth estimation node
+timm>=0.6.12  # Required for depth estimation models
