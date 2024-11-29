@@ -13,7 +13,7 @@ NODE_CLASS_MAPPINGS = {
     "DepthEstimationNode": DepthEstimationNode
 }
 
-# Display names for UI
+# Display names for UI 
 NODE_DISPLAY_NAME_MAPPINGS = {
     "DepthEstimationNode": "Depth Estimation"
 }
