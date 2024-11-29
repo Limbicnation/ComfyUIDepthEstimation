@@ -64,44 +64,49 @@ class DepthEstimationNode:
             
             # Handle tensor conversion
             if torch.is_tensor(image):
-                # Convert tensor to numpy array
                 image_np = image.cpu().numpy()[0]  # Remove batch dimension
-                # Scale to 0-255 range if needed
-                if image_np.max() <= 1.0:
-                    image_np = (image_np * 255).astype(np.uint8)
-                else:
-                    image_np = image_np.astype(np.uint8)
             else:
                 image_np = image
+
+            # Ensure proper RGB format and scaling
+            if image_np.max() <= 1.0:
+                image_np = (image_np * 255).astype(np.uint8)
+            else:
+                image_np = image_np.astype(np.uint8)
                 
-            # Ensure RGB format
-            if image_np.shape[-1] == 4:  # RGBA to RGB
+            # Convert to RGB if necessary
+            if len(image_np.shape) == 3 and image_np.shape[-1] == 4:
                 image_np = image_np[..., :3]
+            elif len(image_np.shape) == 2:
+                # Convert grayscale to RGB
+                image_np = np.stack([image_np] * 3, axis=-1)
                 
             # Convert to PIL for processing
             pil_image = Image.fromarray(image_np)
             
             # Get depth map
             depth_result = self.depth_estimator(pil_image)
+            depth_map = depth_result["predicted_depth"]
             
             # Convert tensor to numpy and ensure correct dimensions
             if torch.is_tensor(depth_map):
                 depth_map = depth_map.squeeze().cpu().numpy()
-            
+                
             # Ensure depth_map is 2D
-            if len(depth_map.shape) > 2:
-                depth_map = depth_map.squeeze()
+            depth_map = depth_map.squeeze()
                 
             # Normalize depth values to 0-255 range
             depth_min = depth_map.min()
             depth_max = depth_map.max()
             if depth_max > depth_min:
-                depth_map = ((depth_map - depth_min) * (255.0 / (depth_max - depth_min))).astype(np.uint8)
+                depth_map = ((depth_map - depth_min) * (255.0 / (depth_max - depth_min)))
             else:
-                depth_map = np.zeros_like(depth_map, dtype=np.uint8)
+                depth_map = np.zeros_like(depth_map)
+            
+            depth_map = depth_map.astype(np.uint8)
             
             # Convert to PIL Image
-            depth_map = Image.fromarray(depth_map)
+            depth_map = Image.fromarray(depth_map, mode='L')  # Convert as grayscale
             
             # Apply post-processing
             if blur_radius > 0:
@@ -122,7 +127,12 @@ class DepthEstimationNode:
             
             # Convert back to tensor format
             depth_array = np.array(depth_map).astype(np.float32) / 255.0
-            depth_tensor = torch.from_numpy(depth_array)[None, ..., None]  # Convert to tensor and add batch and channel dims
+            
+            # Convert single channel to 3 channels
+            depth_array = np.stack([depth_array] * 3, axis=-1)
+            
+            # Add batch dimension
+            depth_tensor = torch.from_numpy(depth_array).unsqueeze(0)
             
             # Move tensor to the correct device
             depth_tensor = depth_tensor.to(self.device)
