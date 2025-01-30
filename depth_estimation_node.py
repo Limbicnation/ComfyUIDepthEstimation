@@ -12,8 +12,18 @@ import logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("DepthEstimation")
 
-# Configure model caching directory
-MODELS_DIR = os.path.join(folder_paths.get_folder_paths("models")[0], "depth_anything")
+# Configure model paths
+if not hasattr(folder_paths, "models_dir"):
+    folder_paths.models_dir = os.path.join(folder_paths.base_path, "models")
+
+# Register depth models path
+DEPTH_DIR = "depth_anything"
+folder_paths.folder_names_and_paths[DEPTH_DIR] = ([
+    os.path.join(folder_paths.models_dir, DEPTH_DIR)
+], folder_paths.supported_pt_extensions)
+
+# Set models directory
+MODELS_DIR = folder_paths.folder_names_and_paths[DEPTH_DIR][0][0]
 os.makedirs(MODELS_DIR, exist_ok=True)
 os.environ["TRANSFORMERS_CACHE"] = MODELS_DIR
 
