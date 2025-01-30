@@ -83,15 +83,23 @@ class DepthEstimationNode:
                 
                 logger.info(f"Loading depth model: {model_name} on device {self.device}")
                 
+                # Determine device type for pipeline
+                device_type = 'cuda' if torch.cuda.is_available() else 'cpu'
+                
                 # Use FP16 for CUDA devices to save VRAM
-                dtype = torch.float16 if 'cuda' in self.device else torch.float32
+                dtype = torch.float16 if 'cuda' in str(self.device) else torch.float32
                 
                 self.depth_estimator = pipeline(
                     "depth-estimation",
                     model=model_path,
-                    device=self.device,
+                    device_map=device_type,  # Use device_map instead of device
                     torch_dtype=dtype
                 )
+                
+                # Ensure model is on the correct device
+                if hasattr(self.depth_estimator, 'model'):
+                    self.depth_estimator.model = self.depth_estimator.model.to(self.device)
+                
                 self.current_model = model_path
                 logger.info(f"Successfully loaded {model_name}")
                 
@@ -109,9 +117,9 @@ class DepthEstimationNode:
             image_np = (image * 255).astype(np.uint8)
         
         if len(image_np.shape) == 3:
-            if image_np.shape[-1] == 4:
+            if image_np.shape[-1] == 4:  # Handle RGBA images
                 image_np = image_np[..., :3]
-        elif len(image_np.shape) == 2:
+        elif len(image_np.shape) == 2:  # Handle grayscale images
             image_np = np.stack([image_np] * 3, axis=-1)
         
         return Image.fromarray(image_np)
