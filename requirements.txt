@@ -4,5 +4,10 @@ transformers>=4.28.1
 Pillow>=9.0.0
 numpy>=1.21.2
 
-# Additional dependencies specific to depth estimation node
+# Dependencies specific to depth estimation node
+huggingface-hub>=0.24.0,<1.0  # Required for model loading, critical version constraint
+accelerate>=0.20.3  # Required for optimized pipeline inference
 timm>=0.6.12  # Required for depth estimation models
+safetensors>=0.3.1  # Required for model loading
+
+# Note: ComfyUI should already provide torch and its CUDA dependencies
