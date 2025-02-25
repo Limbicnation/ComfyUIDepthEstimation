@@ -42,6 +42,9 @@ A custom depth estimation node for ComfyUI using Depth-Anything models to genera
 <div align="center">
   <img src="images/depth-estimation-node.png" width="600" alt="Depth Estimation Node Preview">
 </div>
+<div align="center">
+  <img src="images/depth_map_generator_showcase.jpg" width="600" alt="Depth Map Generator Showcase">
+</div>
 
 ## Node Parameters
 
