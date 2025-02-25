@@ -6,3 +6,4 @@ numpy>=1.21.2
 
 # Additional dependencies specific to depth estimation node
 timm>=0.6.12  # Required for depth estimation models
+huggingface-hub>=0.16.0  # For model downloading
