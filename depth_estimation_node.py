@@ -255,26 +255,30 @@ class DepthEstimationNode:
             gc.collect()
 
     def gamma_correction(self, img: Image.Image, gamma: float = 1.0) -> Image.Image:
-        """
-        Applies gamma correction to the image.
-        
-        Args:
-            img: Input PIL image
-            gamma: Gamma value for correction
-            
-        Returns:
-            Gamma-corrected PIL image
-        """
-        # Use built-in PIL gamma correction with error handling
+        """Applies gamma correction to the image with proper error handling."""
         try:
-            return ImageOps.autocontrast(ImageOps.gamma(img, gamma))
-        except Exception as e:
-            logger.warning(f"Built-in gamma correction failed: {e}, using manual implementation")
-            # Fallback to manual implementation
+            # Convert PIL Image to numpy array
+            img_array = np.array(img)
+            
+            # Apply gamma correction
             inv_gamma = 1.0 / gamma
-            # Create lookup table for faster processing
+            # Create a lookup table for gamma correction
             table = np.array([((i / 255.0) ** inv_gamma) * 255 for i in range(256)], np.uint8)
-            return Image.fromarray(np.array(img)).point(lambda x: table[x])
+            
+            # Apply the lookup table (avoiding PIL's point method which can cause the error)
+            corrected_array = table[img_array]
+            
+            # Ensure the array has the right shape for PIL
+            # If it's a single-channel grayscale image, it should be 2D for PIL
+            if len(corrected_array.shape) == 3 and corrected_array.shape[2] == 1:
+                corrected_array = corrected_array.squeeze(2)
+                
+            # Convert back to PIL Image with explicit mode
+            return Image.fromarray(corrected_array, mode='L')
+        except Exception as e:
+            logger.error(f"Gamma correction failed: {e}")
+            # Return the original image if correction fails
+            return img
 
 # Node registration
 NODE_CLASS_MAPPINGS = {
