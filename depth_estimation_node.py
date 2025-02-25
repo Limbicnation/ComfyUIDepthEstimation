@@ -196,52 +196,54 @@ class DepthEstimationNode:
             if median_size not in self.MEDIAN_SIZES:
                 raise ValueError(f"Invalid median_size. Must be one of {self.MEDIAN_SIZES}")
             
-            # Load model if needed
             self.ensure_model_loaded(model_name)
-            
-            # Process image to PIL format
             pil_image = self.process_image(image)
             
-            # Run inference
             with torch.inference_mode():
-                logger.info(f"Running depth estimation on image size {pil_image.size}")
                 depth_result = self.depth_estimator(pil_image)
                 depth_map = depth_result["predicted_depth"].squeeze().cpu().numpy()
             
             # Normalize depth values
             depth_min, depth_max = depth_map.min(), depth_map.max()
             if depth_max > depth_min:
-                depth_map = ((depth_map - depth_min) / (depth_max - depth_min + 1e-8) * 255)
+                depth_map = ((depth_map - depth_min) / (depth_max - depth_min) * 255.0)
             depth_map = depth_map.astype(np.uint8)
-            depth_map = Image.fromarray(depth_map, mode='L')
+            
+            # Create PIL image explicitly with L mode (grayscale)
+            depth_pil = Image.fromarray(depth_map, mode='L')
             
             # Apply post-processing
             if blur_radius > 0:
-                depth_map = depth_map.filter(ImageFilter.GaussianBlur(radius=blur_radius))
+                depth_pil = depth_pil.filter(ImageFilter.GaussianBlur(radius=blur_radius))
             
             if int(median_size) > 0:
-                depth_map = depth_map.filter(ImageFilter.MedianFilter(size=int(median_size)))
+                depth_pil = depth_pil.filter(ImageFilter.MedianFilter(size=int(median_size)))
             
             if apply_auto_contrast:
-                depth_map = ImageOps.autocontrast(depth_map)
+                depth_pil = ImageOps.autocontrast(depth_pil)
             
             if apply_gamma:
-                depth_array = np.array(depth_map).astype(np.float32) / 255.0
+                depth_array = np.array(depth_pil).astype(np.float32) / 255.0
                 mean_luminance = np.mean(depth_array)
                 if mean_luminance > 0:
                     gamma = np.log(0.5) / np.log(mean_luminance)
-                    depth_map = self.gamma_correction(depth_map, gamma)
+                    # Use direct numpy operations for gamma correction
+                    corrected = np.power(depth_array, 1.0/gamma) * 255.0
+                    depth_pil = Image.fromarray(corrected.astype(np.uint8), mode='L')
             
-            # Convert to tensor - give option for single-channel output to save memory
-            depth_array = np.array(depth_map).astype(np.float32) / 255.0
-            # Return single-channel depth map to save memory (ComfyUI can handle both)
-            depth_tensor = torch.from_numpy(depth_array).unsqueeze(0).unsqueeze(0)
+            # Convert to tensor - explicitly handle as grayscale
+            depth_array = np.array(depth_pil).astype(np.float32) / 255.0
             
-            # Move tensor to the correct device if needed
+            # Make it compatible with ComfyUI by creating a 3-channel image
+            # Use proper reshaping to avoid dimension issues
+            h, w = depth_array.shape
+            depth_rgb = np.stack([depth_array] * 3, axis=-1)  # Create proper 3D array with shape (h, w, 3)
+            
+            depth_tensor = torch.from_numpy(depth_rgb).unsqueeze(0)
+            
             if self.device is not None:
                 depth_tensor = depth_tensor.to(self.device)
             
-            logger.info(f"Depth estimation completed successfully")
             return (depth_tensor,)
             
         except Exception as e:
@@ -249,36 +251,19 @@ class DepthEstimationNode:
             logger.error(error_msg)
             raise RuntimeError(error_msg)
         finally:
-            # Ensure proper cleanup
-            if torch.cuda.is_available():
-                torch.cuda.empty_cache()
+            torch.cuda.empty_cache()
             gc.collect()
 
     def gamma_correction(self, img: Image.Image, gamma: float = 1.0) -> Image.Image:
-        """Applies gamma correction to the image with proper error handling."""
-        try:
-            # Convert PIL Image to numpy array
-            img_array = np.array(img)
-            
-            # Apply gamma correction
-            inv_gamma = 1.0 / gamma
-            # Create a lookup table for gamma correction
-            table = np.array([((i / 255.0) ** inv_gamma) * 255 for i in range(256)], np.uint8)
-            
-            # Apply the lookup table (avoiding PIL's point method which can cause the error)
-            corrected_array = table[img_array]
-            
-            # Ensure the array has the right shape for PIL
-            # If it's a single-channel grayscale image, it should be 2D for PIL
-            if len(corrected_array.shape) == 3 and corrected_array.shape[2] == 1:
-                corrected_array = corrected_array.squeeze(2)
-                
-            # Convert back to PIL Image with explicit mode
-            return Image.fromarray(corrected_array, mode='L')
-        except Exception as e:
-            logger.error(f"Gamma correction failed: {e}")
-            # Return the original image if correction fails
-            return img
+        """Applies gamma correction to the image."""
+        # Convert to numpy array
+        img_array = np.array(img)
+        
+        # Apply gamma correction directly with numpy
+        corrected = np.power(img_array.astype(np.float32) / 255.0, 1.0/gamma) * 255.0
+        
+        # Ensure uint8 type and create image with explicit mode
+        return Image.fromarray(corrected.astype(np.uint8), mode='L')
 
 # Node registration
 NODE_CLASS_MAPPINGS = {
