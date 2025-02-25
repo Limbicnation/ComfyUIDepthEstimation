@@ -168,12 +168,12 @@ class DepthEstimationNode:
         return Image.fromarray(image_np)
 
     def estimate_depth(self, 
-                      image: torch.Tensor, 
-                      model_name: str, 
-                      blur_radius: float = 2.0, 
-                      median_size: str = "5", 
-                      apply_auto_contrast: bool = True, 
-                      apply_gamma: bool = True) -> Tuple[torch.Tensor]:
+                     image: torch.Tensor, 
+                     model_name: str, 
+                     blur_radius: float = 2.0, 
+                     median_size: str = "5", 
+                     apply_auto_contrast: bool = True, 
+                     apply_gamma: bool = True) -> Tuple[torch.Tensor]:
         """
         Estimates depth from input image with error handling and cleanup.
         
@@ -211,7 +211,7 @@ class DepthEstimationNode:
             # Normalize depth values
             depth_min, depth_max = depth_map.min(), depth_map.max()
             if depth_max > depth_min:
-                depth_map = ((depth_map - depth_min) * (255.0 / (depth_max - depth_min)))
+                depth_map = ((depth_map - depth_min) / (depth_max - depth_min + 1e-8) * 255)
             depth_map = depth_map.astype(np.uint8)
             depth_map = Image.fromarray(depth_map, mode='L')
             
@@ -232,10 +232,10 @@ class DepthEstimationNode:
                     gamma = np.log(0.5) / np.log(mean_luminance)
                     depth_map = self.gamma_correction(depth_map, gamma)
             
-            # Convert to tensor
+            # Convert to tensor - give option for single-channel output to save memory
             depth_array = np.array(depth_map).astype(np.float32) / 255.0
-            depth_array = np.stack([depth_array] * 3, axis=-1)
-            depth_tensor = torch.from_numpy(depth_array).unsqueeze(0)
+            # Return single-channel depth map to save memory (ComfyUI can handle both)
+            depth_tensor = torch.from_numpy(depth_array).unsqueeze(0).unsqueeze(0)
             
             # Move tensor to the correct device if needed
             if self.device is not None:
@@ -265,10 +265,16 @@ class DepthEstimationNode:
         Returns:
             Gamma-corrected PIL image
         """
-        inv_gamma = 1.0 / gamma
-        # Create lookup table for faster processing
-        table = np.array([((i / 255.0) ** inv_gamma) * 255 for i in range(256)], np.uint8)
-        return ImageOps.gamma(img, gamma)  # Using built-in PIL gamma for better performance
+        # Use built-in PIL gamma correction with error handling
+        try:
+            return ImageOps.autocontrast(ImageOps.gamma(img, gamma))
+        except Exception as e:
+            logger.warning(f"Built-in gamma correction failed: {e}, using manual implementation")
+            # Fallback to manual implementation
+            inv_gamma = 1.0 / gamma
+            # Create lookup table for faster processing
+            table = np.array([((i / 255.0) ** inv_gamma) * 255 for i in range(256)], np.uint8)
+            return Image.fromarray(np.array(img)).point(lambda x: table[x])
 
 # Node registration
 NODE_CLASS_MAPPINGS = {
