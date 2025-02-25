@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200">
+  <!-- Dark background circle -->
+  <circle cx="100" cy="100" r="90" fill="#1a2030"/>
+  
+  <!-- Simple layered squares with depth effect - only 3 layers -->
+  <!-- Bottom layer (furthest) -->
+  <rect x="60" y="100" width="80" height="40" fill="#0e4d92" rx="4" ry="4" transform="skewX(-15)"/>
+  
+  <!-- Middle layer -->
+  <rect x="60" y="80" width="80" height="40" fill="#1a75ff" rx="4" ry="4" transform="skewX(-15)"/>
+  
+  <!-- Top layer (closest) -->
+  <rect x="60" y="60" width="80" height="40" fill="#4d94ff" rx="4" ry="4" transform="skewX(-15)"/>
+  
+  <!-- Simple depth indicator line -->
+  <line x1="145" y1="60" x2="145" y2="140" stroke="#8baff7" stroke-width="2"/>
+  <line x1="142" y1="60" x2="148" y2="60" stroke="#8baff7" stroke-width="2"/>
+  <line x1="142" y1="140" x2="148" y2="140" stroke="#8baff7" stroke-width="2"/>
+  
+  <!-- Z letter to indicate depth - smaller size -->
+  <text x="153" y="100" font-family="Arial, sans-serif" font-size="18" font-weight="bold" fill="#8baff7" text-anchor="middle">Z</text>
+</svg>
