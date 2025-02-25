@@ -1,7 +1,7 @@
-## <img src="images/depth-estimation-icon.svg" width="32" height="32" alt="Depth Estimation Icon" style="vertical-align: middle"> ComfyUIDepthEstimation ComfyUIDepthEstimation
+## <img src="images/depth-estimation-logo-with-smaller-z.svg" width="32" height="32" alt="Depth Estimation Icon" style="vertical-align: middle"> ComfyUIDepthEstimation ComfyUIDepthEstimation
 
 <div align="center">
-  <img src="images/depth-estimation-icon.svg" width="150" height="150" alt="Depth Estimation Logo">
+  <img src="images/depth-estimation-logo-with-smaller-z.svg" width="150" height="150" alt="Depth Estimation Logo">
 </div>
 
 A custom depth estimation node for ComfyUI using Depth-Anything models to generate depth maps from images.
@@ -47,12 +47,12 @@ A custom depth estimation node for ComfyUI using Depth-Anything models to genera
 
 Node Parameters
 
-image: Input image (IMAGE type)
-model_name: Select from available Depth-Anything models
-blur_radius: Gaussian blur radius (0.0 - 10.0, default: 2.0)
-median_size: Median filter size (3, 5, 7, 9, 11)
-apply_auto_contrast: Enable automatic contrast enhancement
-apply_gamma: Enable gamma correction
+- image: Input image (IMAGE type)
+- model_name: Select from available Depth-Anything models
+- blur_radius: Gaussian blur radius (0.0 - 10.0, default: 2.0)
+- median_size: Median filter size (3, 5, 7, 9, 11)
+- apply_auto_contrast: Enable automatic contrast enhancement
+- apply_gamma: Enable gamma correction
 
 ### Integrate with ComfyUI
 
