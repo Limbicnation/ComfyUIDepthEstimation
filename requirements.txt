@@ -1,17 +1,18 @@
 # requirements.txt for ComfyUI-DepthEstimation Node
+# Note: These are minimum requirements. ComfyUI's environment may provide newer versions.
 
-# Transformers library with specific tokenizers version to avoid build issues
-tokenizers>=0.13.3,<0.14.0  # Use pre-built version compatible with most platforms
-transformers>=4.20.0,<4.37.0 # Required for Depth Anything models
+# Core dependencies
+tokenizers>=0.13.3  # Pre-built version compatible with most platforms
+transformers>=4.20.0  # Required for Depth Anything models, but ComfyUI may have a specific version
 
 # Pillow (PIL Fork) - Compatibility with other ComfyUI nodes
-Pillow>=9.2.0,<10.0.0 # Ensures compatibility with nodes requiring >=9.2.0
+Pillow>=9.2.0  # Ensures compatibility with nodes requiring >=9.2.0
 
 # NumPy - Using version that properly supports numpy.dtypes
-numpy>=1.23.0,<2.0.0 # Resolves compatibility issues while avoiding NumPy 2.x conflicts
+numpy>=1.23.0  # Resolves compatibility issues
 
 # Additional dependencies specific to depth estimation node
-timm>=0.6.12,<0.9.0  # Required for depth estimation models
+timm>=0.6.12  # Required for depth estimation models
 huggingface-hub>=0.16.0  # For model downloading
 
 # Note: PyTorch dependencies are handled by ComfyUI's core installation
