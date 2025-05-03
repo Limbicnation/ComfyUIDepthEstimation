@@ -1,6 +1,9 @@
 # requirements.txt for ComfyUI-DepthEstimation Node
 # Note: These are minimum requirements. ComfyUI's environment may provide newer versions.
 
+# Fix for protobuf errors
+protobuf==3.20.3
+
 # Core dependencies
 tokenizers>=0.13.3  # Pre-built version compatible with most platforms
 transformers>=4.20.0  # Required for Depth Anything models, but ComfyUI may have a specific version

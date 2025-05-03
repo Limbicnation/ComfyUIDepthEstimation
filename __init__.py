@@ -50,7 +50,7 @@ for module_name, min_version in required_dependencies.items():
         logger.warning(f"Missing required dependency: {module_name}>={min_version}")
 
 if missing_dependencies:
-    # Create a placeholder node that displays an error message
+    # Create placeholder node with dependency error
     class DependencyErrorNode:
         """Placeholder node that shows dependency installation instructions."""
         
@@ -76,38 +76,47 @@ if missing_dependencies:
     NODE_DISPLAY_NAME_MAPPINGS = {
         "DepthEstimationNode": "Depth Estimation (Missing Dependencies)"
     }
-    
-    logger.error(f"DepthEstimation Node disabled due to missing dependencies: {', '.join(missing_dependencies)}")
-    logger.error(f"Please install with: pip install {' '.join(missing_dependencies)}")
 else:
-    # All dependencies are available, import the actual node
+    # All dependencies are available, try to import the actual node
     try:
-        # Import the current implementation
         from .depth_estimation_node import DepthEstimationNode
-        logger.info("Successfully loaded depth estimation node")
-    except ImportError as e:
-        logger.error(f"Failed to import node implementation: {e}")
         
-        # Create minimal placeholder if the import fails
-        class DepthEstimationNode:
+        # Register the actual depth estimation node
+        NODE_CLASS_MAPPINGS = {
+            "DepthEstimationNode": DepthEstimationNode
+        }
+        
+        NODE_DISPLAY_NAME_MAPPINGS = {
+            "DepthEstimationNode": "Depth Estimation"
+        }
+    except Exception as e:
+        # Capture any import errors that might occur with transformers
+        logger.error(f"Error importing depth estimation node: {str(e)}")
+        
+        # Create a more specific error node
+        class TransformersErrorNode:
             @classmethod
             def INPUT_TYPES(cls):
-                return {"required": {"image": ("IMAGE",)}}
-            RETURN_TYPES = ("IMAGE",)
-            FUNCTION = "estimate_depth"
+                return {"required": {}}
+            
+            RETURN_TYPES = ("STRING",)
+            FUNCTION = "error_message"
             CATEGORY = "depth"
             
-            def estimate_depth(self, image):
-                return (image,)  # Just pass through the image
-    
-    # Register the actual depth estimation node
-    NODE_CLASS_MAPPINGS = {
-        "DepthEstimationNode": DepthEstimationNode
-    }
-    
-    NODE_DISPLAY_NAME_MAPPINGS = {
-        "DepthEstimationNode": "Depth Estimation"
-    }
+            def error_message(self):
+                if "Descriptors cannot be created directly" in str(e):
+                    message = "Protobuf version conflict. Run: pip install protobuf==3.20.3"
+                else:
+                    message = f"Error loading depth estimation: {str(e)}"
+                return (message,)
+        
+        NODE_CLASS_MAPPINGS = {
+            "DepthEstimationNode": TransformersErrorNode
+        }
+        
+        NODE_DISPLAY_NAME_MAPPINGS = {
+            "DepthEstimationNode": "Depth Estimation (Error)"
+        }
 
 # Module exports
 __all__ = [
