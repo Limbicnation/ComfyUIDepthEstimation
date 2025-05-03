@@ -198,16 +198,40 @@ class DepthAnythingV2(nn.Module):
 if not hasattr(folder_paths, "models_dir"):
     folder_paths.models_dir = os.path.join(folder_paths.base_path, "models")
 
-# Register depth models path
+# Register depth models path - support multiple possible directory structures
 DEPTH_DIR = "depth_anything"
-folder_paths.folder_names_and_paths[DEPTH_DIR] = ([
-    os.path.join(folder_paths.models_dir, DEPTH_DIR)
-], folder_paths.supported_pt_extensions)
+DEPTH_ANYTHING_DIR = "depthanything"
 
-# Set models directory
-MODELS_DIR = folder_paths.folder_names_and_paths[DEPTH_DIR][0][0]
-os.makedirs(MODELS_DIR, exist_ok=True)
+# Check which directory structure exists
+possible_paths = [
+    os.path.join(folder_paths.models_dir, DEPTH_DIR),
+    os.path.join(folder_paths.models_dir, DEPTH_ANYTHING_DIR),
+    os.path.join(folder_paths.models_dir, DEPTH_ANYTHING_DIR, DEPTH_DIR),
+    os.path.join(folder_paths.models_dir, "checkpoints", DEPTH_DIR),
+    os.path.join(folder_paths.models_dir, "checkpoints", DEPTH_ANYTHING_DIR),
+]
+
+# Filter to only paths that exist
+existing_paths = [p for p in possible_paths if os.path.exists(p)]
+if not existing_paths:
+    # If none exists, create the default one
+    existing_paths = [os.path.join(folder_paths.models_dir, DEPTH_DIR)]
+    os.makedirs(existing_paths[0], exist_ok=True)
+    logger.info(f"Created model directory: {existing_paths[0]}")
+
+# Log all found paths for debugging
+logger.info(f"Found depth model directories: {existing_paths}")
+
+# Register all possible paths for model loading
+folder_paths.folder_names_and_paths[DEPTH_DIR] = (existing_paths, folder_paths.supported_pt_extensions)
+
+# Set primary models directory to the first available path
+MODELS_DIR = existing_paths[0]
+logger.info(f"Using primary models directory: {MODELS_DIR}")
+
+# Set Hugging Face cache to the models directory to ensure models are saved there
 os.environ["TRANSFORMERS_CACHE"] = MODELS_DIR
+os.environ["HF_HOME"] = MODELS_DIR
 
 # Define model configurations for direct loading
 MODEL_CONFIGS = {
@@ -222,38 +246,52 @@ DEPTH_MODELS = {
     "Depth-Anything-Small": {
         "path": "LiheYoung/depth-anything-small-hf",  # Correct HF path for V1
         "vram_mb": 1500,
-        "direct_url": "https://github.com/LiheYoung/Depth-Anything/releases/download/v1.0/depth_anything_vitb14.pt"
+        "direct_url": "https://github.com/LiheYoung/Depth-Anything/releases/download/v1.0/depth_anything_vitb14.pt",
+        "model_type": "v1",
+        "encoder": "vitb"
     },
     "Depth-Anything-Base": {
         "path": "LiheYoung/depth-anything-base-hf",  # Correct HF path for V1
         "vram_mb": 2500,
-        "direct_url": "https://github.com/LiheYoung/Depth-Anything/releases/download/v1.0/depth_anything_vitl14.pt"
+        "direct_url": "https://github.com/LiheYoung/Depth-Anything/releases/download/v1.0/depth_anything_vitl14.pt",
+        "model_type": "v1",
+        "encoder": "vitl"
     },
     "Depth-Anything-Large": {
         "path": "LiheYoung/depth-anything-large-hf",  # Correct HF path for V1
         "vram_mb": 4000,
-        "direct_url": "https://github.com/LiheYoung/Depth-Anything/releases/download/v1.0/depth_anything_vitl14.pt"
+        "direct_url": "https://github.com/LiheYoung/Depth-Anything/releases/download/v1.0/depth_anything_vitl14.pt",
+        "model_type": "v1",
+        "encoder": "vitl"
     },
     "Depth-Anything-V2-Small": {
         "path": "LiheYoung/depth-anything-v2-small-hf",  # Updated corrected path
         "vram_mb": 1500, 
-        "direct_url": "https://huggingface.co/LiheYoung/depth-anything-v2-small-hf/resolve/main/pytorch_model.bin"
+        "direct_url": "https://huggingface.co/LiheYoung/depth-anything-v2-small-hf/resolve/main/pytorch_model.bin",
+        "model_type": "v2",
+        "encoder": "vits",
+        "config": MODEL_CONFIGS["vits"]
     },
     "Depth-Anything-V2-Base": {
         "path": "LiheYoung/depth-anything-v2-base-hf",  # Updated corrected path
         "vram_mb": 2500,
-        "direct_url": "https://huggingface.co/LiheYoung/depth-anything-v2-base-hf/resolve/main/pytorch_model.bin"
+        "direct_url": "https://huggingface.co/LiheYoung/depth-anything-v2-base-hf/resolve/main/pytorch_model.bin",
+        "model_type": "v2",
+        "encoder": "vitb",
+        "config": MODEL_CONFIGS["vitb"]
     },
-    # Add MiDaS models as dedicated options
+    # Add MiDaS models as dedicated options with direct download URLs
     "MiDaS-Small": {
         "path": "Intel/dpt-hybrid-midas",
         "vram_mb": 1000,
-        "midas_type": "MiDaS_small"
+        "midas_type": "MiDaS_small",
+        "direct_url": "https://github.com/intel-isl/MiDaS/releases/download/v2_1/midas_v21_small_256.pt"
     },
     "MiDaS-Base": {
         "path": "Intel/dpt-hybrid-midas", 
         "vram_mb": 1200,
-        "midas_type": "DPT_Hybrid"
+        "midas_type": "DPT_Hybrid",
+        "direct_url": "https://github.com/intel-isl/MiDaS/releases/download/v3/dpt_hybrid-midas-501f0c75.pt"
     }
 }
 
@@ -336,8 +374,20 @@ class MiDaSWrapper:
         try:
             # Convert PIL image to tensor for processing
             if isinstance(image, Image.Image):
-                # Resize to 384x384 (standard MiDaS size)
-                img_resized = image.resize((384, 384), Image.LANCZOS)
+                # Get original dimensions
+                original_width, original_height = image.size
+                
+                # Ensure dimensions are multiple of 32 (required for some models)
+                # This helps prevent tensor dimension mismatches
+                target_height = ((original_height + 31) // 32) * 32
+                target_width = ((original_width + 31) // 32) * 32
+                
+                # Resize to dimensions that work well with the model
+                img_resized = image.resize((target_width, target_height), Image.LANCZOS)
+                
+                # Log resize information
+                if (target_width != original_width) or (target_height != original_height):
+                    logger.info(f"Resized input from {original_width}x{original_height} to {target_width}x{target_height} (multiples of 32)")
                 
                 # Convert to numpy array
                 img_np = np.array(img_resized).astype(np.float32) / 255.0
@@ -362,12 +412,22 @@ class MiDaSWrapper:
                     # Still convert to ensure it's float32
                     input_tensor = image.float()
                 
-                # Add batch dimension if missing
-                if input_tensor.dim() == 3:
-                    input_tensor = input_tensor.unsqueeze(0)
+                # Handle tensor shape issues
+                # Ensure we have batch and channel dimensions
+                if input_tensor.dim() == 2:  # [H, W]
+                    input_tensor = input_tensor.unsqueeze(0).unsqueeze(0)  # Add batch and channel dims [1, 1, H, W]
+                elif input_tensor.dim() == 3:
+                    # Could be [C, H, W] or [B, H, W]
+                    if input_tensor.shape[0] <= 3:  # Likely [C, H, W]
+                        input_tensor = input_tensor.unsqueeze(0)  # Add batch dim [1, C, H, W]
+                    else:  # Likely [B, H, W]
+                        input_tensor = input_tensor.unsqueeze(1)  # Add channel dim [B, 1, H, W]
             
             # Move to device and ensure float type
             input_tensor = input_tensor.to(self.device).float()
+            
+            # Log tensor shape for debugging
+            logger.info(f"MiDaS input tensor shape: {input_tensor.shape}, dtype: {input_tensor.dtype}")
             
             # Log tensor info for debugging
             logger.info(f"Input tensor type before inference: {input_tensor.dtype}")
@@ -385,6 +445,20 @@ class MiDaSWrapper:
                 # Resize to match input resolution
                 if isinstance(image, Image.Image):
                     w, h = image.size
+                    
+                    # Fix tensor dimensionality mismatch by ensuring output has proper dimensions
+                    # This fixes the "Input and output must have the same number of spatial dimensions" error
+                    if output.dim() == 3:  # Add height/width dimension if missing
+                        output = output.unsqueeze(2)
+                    
+                    # Ensure output has at least 4 dimensions (B,C,H,W)
+                    while output.dim() < 4:
+                        output = output.unsqueeze(-1)
+                    
+                    # Log the shape for debugging
+                    logger.info(f"Resizing output tensor from shape {output.shape} to size ({h}, {w})")
+                    
+                    # Now interpolate with proper dimensions
                     output = torch.nn.functional.interpolate(
                         output,
                         size=(h, w),
@@ -747,9 +821,9 @@ class DepthEstimationNode:
                         logger.warning(f"Failed to load model from {path}: {str(path_error)}")
                         continue
                 
-                # Try the direct loading approach if all HuggingFace transformers approaches failed
+                # Prioritize direct model loading for V2 models and as fallback for other models
                 if not success:
-                    logger.info("All transformers pipeline attempts failed, trying direct model loading...")
+                    logger.info("Transformers pipeline attempts failed, trying direct model loading with explicit configurations...")
                     
                     # Try the direct loading approach
                     direct_model = self.load_model_direct(model_name, model_info, force_cpu)
@@ -761,28 +835,102 @@ class DepthEstimationNode:
                     else:
                         logger.error("Direct model loading also failed")
                 
-                # Final fallback: try a different model or report failure
+                # If all attempts failed so far, try MiDaS as a final fallback
                 if not success:
-                    # If all attempts failed, try a different model
-                    if model_name != "Depth-Anything-V2-Small" and "Depth-Anything-V2-Small" in DEPTH_MODELS:
-                        logger.warning(f"Failed to load {model_name}, trying Depth-Anything-V2-Small as fallback")
-                        try:
-                            # Increase chances of success with CPU
-                            return self.ensure_model_loaded("Depth-Anything-V2-Small", True, True)
-                        except Exception as fallback_error:
-                            logger.error(f"Fallback model also failed: {str(fallback_error)}")
+                    try:
+                        logger.info("Attempting to load MiDaS model as final fallback...")
+                        midas_model = MiDaSWrapper("dpt_hybrid", self.device)
+                        # Test the model
+                        test_img = Image.new("RGB", (64, 64), color=(128, 128, 128))
+                        _ = midas_model(test_img)
+                        self.depth_estimator = midas_model
+                        success = True
+                        logger.info("Successfully loaded MiDaS fallback model")
+                    except Exception as midas_error:
+                        logger.error(f"MiDaS fallback also failed: {str(midas_error)}")
+                        
+                        # If all attempts failed, try a different model
+                        if model_name != "Depth-Anything-V2-Small" and "Depth-Anything-V2-Small" in DEPTH_MODELS:
+                            logger.warning(f"Failed to load {model_name}, trying Depth-Anything-V2-Small as fallback")
+                            try:
+                                # Increase chances of success with CPU
+                                return self.ensure_model_loaded("Depth-Anything-V2-Small", True, True)
+                            except Exception as fallback_error:
+                                logger.error(f"Fallback model also failed: {str(fallback_error)}")
+                
+                # If still failing, show helpful message with instructions
+                if not success:
+                    # Show all model directories for debugging
+                    all_model_dirs = "\n".join(existing_paths)
                     
-                    # If still failing, show helpful message with instructions
-                    error_msg = f"""
-Failed to load model {model_name} after trying multiple sources.
-Last error: {str(last_error)}
+                    # Check if the error is related to GPU issues
+                    gpu_related = False
+                    auth_related = False
+                    tensor_related = False
+                    
+                    error_str = str(last_error).lower()
+                    if "cuda" in error_str or "gpu" in error_str or "vram" in error_str:
+                        gpu_related = True
+                    if "authentication" in error_str or "unauthorized" in error_str or "401" in error_str:
+                        auth_related = True
+                    if "tensor" in error_str or "dimension" in error_str or "shape" in error_str:
+                        tensor_related = True
+                    
+                    # Create a targeted error message based on the error type
+                    if auth_related:
+                        error_solution = """
+AUTHENTICATION ERROR: The model couldn't be downloaded due to Hugging Face authentication requirements.
 
-Try these solutions:
-1. Check your internet connection
-2. Download the model manually from the direct URLs in this file
-3. Try a different model version (e.g. Depth-Anything-V2-Small instead of Depth-Anything-Small)
-4. Ensure you have enough VRAM available or use force_cpu=True
-5. Make sure the models directory exists: {MODELS_DIR}
+SOLUTION: 
+1. Use force_cpu=True in the node settings (this will use the MiDaS fallback model)
+2. Download the model manually using one of these direct links that don't require authentication:
+   - https://github.com/LiheYoung/Depth-Anything/releases/download/v2.0/depth_anything_v2_small.pt
+   - https://huggingface.co/ckpt/depth-anything-v2/resolve/main/depth_anything_v2_small.pt
+
+   Save the file to one of these directories:
+   {all_model_dirs}
+"""
+                    elif gpu_related:
+                        error_solution = """
+GPU ERROR: The model failed to load on your GPU.
+
+SOLUTION:
+1. Use force_cpu=True to use CPU processing instead
+2. Reduce input_size parameter to 384 to reduce memory requirements
+3. Try a smaller model like MiDaS-Small instead
+4. Ensure you have the latest GPU drivers installed
+"""
+                    elif tensor_related:
+                        error_solution = """
+TENSOR DIMENSION ERROR: There was a problem with tensor shapes during model processing.
+
+SOLUTION:
+1. Use force_cpu=True to use CPU processing instead (more stable)
+2. Set input_size to a multiple of 32 (e.g. 384, 512)
+3. Try processing the image at a different resolution
+4. Try a different model like MiDaS-Small
+"""
+                    else:
+                        error_solution = f"""
+Failed to load model {model_name} after trying multiple sources.
+
+GENERAL SOLUTIONS:
+1. Download the model manually using one of these direct URLs:
+   - Depth-Anything-V2-Small: https://github.com/LiheYoung/Depth-Anything/releases/download/v2.0/depth_anything_v2_small.pt
+   - MiDaS Base: https://github.com/intel-isl/MiDaS/releases/download/v3/dpt_hybrid-midas-501f0c75.pt
+
+2. Try using force_cpu=True in node settings
+3. Try a different model version
+4. Reduce input_size parameter to a smaller value like 384
+"""
+                    
+                    error_msg = f"""
+MODEL LOADING ERROR: {str(last_error)}
+
+{error_solution}
+
+SEARCHED DIRECTORIES:
+{all_model_dirs}
 """
                     logger.error(error_msg)
                     raise RuntimeError(error_msg)
@@ -820,57 +968,190 @@ Try these solutions:
             device_type = 'cpu' if force_cpu else ('cuda' if torch.cuda.is_available() else 'cpu')
             device = torch.device(device_type)
             
-            # Define model directory and ensure it exists
-            cache_dir = os.path.join(MODELS_DIR, model_name.replace("-", "_").lower())
+            # Look in all possible model directories
+            # This is important to support various directory structures
+            model_found = False
+            model_path_local = None
+            
+            # Make a unique model cache directory for this specific model
+            model_subfolder = model_name.replace("-", "_").lower()
+            
+            # Check all possible locations for the model file
+            for base_path in existing_paths:
+                # Try different possible locations and filename patterns
+                possible_model_locations = [
+                    # Direct downloads in the model directory
+                    os.path.join(base_path, model_subfolder),
+                    
+                    # Using the full HF directory structure
+                    os.path.join(base_path, model_info.get("path", "").replace("/", "_")),
+                    
+                    # Directly in base directory
+                    base_path,
+                ]
+                
+                # Add directory structure with model configs if V2
+                if model_info.get("model_type") == "v2":
+                    v2_path = os.path.join(base_path, "v2")
+                    possible_model_locations.append(v2_path)
+                    possible_model_locations.append(os.path.join(v2_path, model_subfolder))
+                
+                # Try all locations
+                logger.info(f"Searching for existing model in these directories: {possible_model_locations}")
+                
+                for location in possible_model_locations:
+                    # Check for model file with various naming patterns
+                    if os.path.exists(location):
+                        # Check for common filenames
+                        for filename in ["pytorch_model.bin", "model.pt", "model.pth", 
+                                         f"{model_subfolder}.pt", f"{model_subfolder}.bin"]:
+                            file_path = os.path.join(location, filename)
+                            if os.path.exists(file_path):
+                                logger.info(f"Found existing model file: {file_path}")
+                                model_path_local = file_path
+                                model_found = True
+                                break
+                    
+                    if model_found:
+                        break
+                
+                if model_found:
+                    break
+            
+            # If model not found, use the first directory for downloading
+            cache_dir = os.path.join(existing_paths[0], model_subfolder)
             os.makedirs(cache_dir, exist_ok=True)
             
             # Get model configuration
-            is_v2 = model_info.get("v2", False)
-            config_name = model_info.get("config", "vits")
+            model_type = model_info.get("model_type", "v1")
+            encoder = model_info.get("encoder", "vits")
+            config = model_info.get("config", MODEL_CONFIGS.get(encoder, MODEL_CONFIGS["vits"]))
             
-            # Step 1: Download the model weights if they don't exist
+            # Step 1: If model not found locally, download it
+            # List of alternative URLs that don't require authentication
+            alternative_urls = {
+                "Depth-Anything-V2-Small": [
+                    "https://huggingface.co/LiheYoung/depth-anything-v2-small-hf/resolve/main/pytorch_model.bin",
+                    "https://github.com/LiheYoung/Depth-Anything/releases/download/v2.0/depth_anything_v2_small.pt",
+                    "https://huggingface.co/ckpt/depth-anything-v2/resolve/main/depth_anything_v2_small.pt"
+                ],
+                "Depth-Anything-V2-Base": [
+                    "https://huggingface.co/LiheYoung/depth-anything-v2-base-hf/resolve/main/pytorch_model.bin",
+                    "https://github.com/LiheYoung/Depth-Anything/releases/download/v2.0/depth_anything_v2_base.pt",
+                    "https://huggingface.co/ckpt/depth-anything-v2/resolve/main/depth_anything_v2_base.pt"
+                ],
+                "MiDaS-Base": [
+                    "https://github.com/intel-isl/MiDaS/releases/download/v3/dpt_hybrid-midas-501f0c75.pt"
+                ]
+            }
+            
+            # Get primary URL from model_info
             direct_url = model_info.get("direct_url")
-            model_path_local = None
             
-            if direct_url:
-                model_filename = os.path.basename(direct_url)
-                model_path_local = os.path.join(cache_dir, model_filename)
-                
-                if not os.path.exists(model_path_local):
-                    logger.info(f"Downloading model weights from {direct_url}")
-                    try:
-                        # Download with progress reporting
-                        logger.info(f"Starting download to {model_path_local}")
+            # Add alternative URLs to try if the main one fails
+            urls_to_try = [direct_url] if direct_url else []
+            
+            # Add alternative URLs for this model if available
+            if model_name in alternative_urls:
+                urls_to_try.extend(alternative_urls[model_name])
+            
+            # Try downloading the model if not found locally
+            if not model_found and urls_to_try:
+                # Try each URL in sequence until one works
+                for url in urls_to_try:
+                    if not url:
+                        continue
                         
+                    try:
+                        model_filename = os.path.basename(url)
+                        model_path_local = os.path.join(cache_dir, model_filename)
+                        
+                        if os.path.exists(model_path_local):
+                            logger.info(f"Model already exists at {model_path_local}")
+                            model_found = True
+                            break
+                        
+                        logger.info(f"Attempting to download model from {url} to {model_path_local}")
+                        
+                        # Create parent directory if needed
+                        os.makedirs(os.path.dirname(model_path_local), exist_ok=True)
+                        
+                        # Try different download methods
+                        download_success = False
+                        
+                        # First try wget (more reliable for large files)
                         try:
-                            # Try wget (more reliable for large files)
-                            wget.download(direct_url, out=model_path_local)
+                            logger.info(f"Downloading with wget: {url}")
+                            wget.download(url, out=model_path_local)
                             logger.info(f"Downloaded model weights to {model_path_local}")
-                        except:
-                            # Fallback to requests
-                            response = requests.get(direct_url, stream=True)
-                            total_size = int(response.headers.get('content-length', 0))
+                            download_success = True
+                        except Exception as wget_error:
+                            logger.warning(f"wget download failed: {str(wget_error)}")
                             
-                            if response.status_code == 200:
-                                with open(model_path_local, 'wb') as f:
-                                    for data in response.iter_content(1024 * 1024):  # 1MB chunks
-                                        f.write(data)
+                            # Fallback to requests
+                            try:
+                                logger.info(f"Downloading with requests: {url}")
+                                response = requests.get(url, stream=True)
+                                
+                                if response.status_code == 200:
+                                    total_size = int(response.headers.get('content-length', 0))
+                                    logger.info(f"File size: {total_size/1024/1024:.1f} MB")
+                                    
+                                    with open(model_path_local, 'wb') as f:
+                                        downloaded = 0
+                                        for data in response.iter_content(1024 * 1024):  # 1MB chunks
+                                            f.write(data)
+                                            downloaded += len(data)
+                                            if total_size > 0 and downloaded % (10 * 1024 * 1024) == 0:  # Log every 10MB
+                                                progress = (downloaded / total_size) * 100
+                                                logger.info(f"Downloaded {downloaded/1024/1024:.1f}MB of {total_size/1024/1024:.1f}MB ({progress:.1f}%)")
+                                    
+                                    logger.info(f"Download complete: {model_path_local}")
+                                    download_success = True
+                                else:
+                                    logger.warning(f"Failed to download from {url}: HTTP status {response.status_code}")
+                            except Exception as req_error:
+                                logger.warning(f"Requests download failed: {str(req_error)}")
+                        
+                        # Try urllib as last resort
+                        if not download_success:
+                            try:
+                                logger.info(f"Downloading with urllib: {url}")
+                                urllib.request.urlretrieve(url, model_path_local)
                                 logger.info(f"Downloaded model weights to {model_path_local}")
-                            else:
-                                logger.warning(f"Failed to download model: status {response.status_code}")
-                                return None
+                                download_success = True
+                            except Exception as urllib_error:
+                                logger.warning(f"urllib download failed: {str(urllib_error)}")
+                        
+                        # Check if download succeeded
+                        if download_success and os.path.exists(model_path_local) and os.path.getsize(model_path_local) > 0:
+                            logger.info(f"Successfully downloaded model to {model_path_local}")
+                            model_found = True
+                            break
+                        else:
+                            logger.warning(f"Download appeared to succeed but file is empty or missing")
+                            # Try to remove the failed download
+                            if os.path.exists(model_path_local):
+                                try:
+                                    os.remove(model_path_local)
+                                except:
+                                    pass
+                    
                     except Exception as dl_error:
-                        logger.error(f"Error downloading model: {str(dl_error)}")
-                        return None
+                        logger.warning(f"Error downloading from {url}: {str(dl_error)}")
+                        continue
+                
+                if not model_found:
+                    logger.error("All download attempts failed")
             
-            # Step 2: Create and load the appropriate model
-            if is_v2 and TIMM_AVAILABLE and model_path_local and os.path.exists(model_path_local):
-                # Use the DepthAnythingV2 implementation for V2 models
-                try:
-                    # Get the correct configuration for this model
-                    if config_name in MODEL_CONFIGS:
-                        config = MODEL_CONFIGS[config_name]
-                        logger.info(f"Creating DepthAnythingV2 with config: {config}")
+            # Step 2: Create and load the appropriate model if found
+            if model_found and model_path_local and os.path.exists(model_path_local):
+                logger.info(f"Found model file at: {model_path_local}")
+                
+                # Handle V2 models with DepthAnythingV2 implementation
+                if model_type == "v2" and TIMM_AVAILABLE:
+                    try:
+                        logger.info(f"Loading as DepthAnythingV2 model with config: {config}")
                         
                         # Create model with the appropriate configuration
                         model = DepthAnythingV2(**config)
@@ -878,6 +1159,11 @@ Try these solutions:
                         # Load weights from checkpoint
                         logger.info(f"Loading weights from {model_path_local}")
                         state_dict = torch.load(model_path_local, map_location=device)
+                        
+                        # Convert state dict to float32 if needed
+                        if any(v.dtype == torch.float64 for v in state_dict.values() if hasattr(v, 'dtype')):
+                            logger.info("Converting state dict from float64 to float32")
+                            state_dict = {k: v.float() if hasattr(v, 'dtype') else v for k, v in state_dict.items()}
                         
                         # Attempt to load the state dict (handles different formats)
                         try:
@@ -893,25 +1179,27 @@ Try these solutions:
                             else:
                                 model.load_state_dict(state_dict, strict=False)
                         
-                        # Move model to the correct device
-                        model.to(device)
+                        # Move model to the correct device and ensure float32
+                        model = model.float().to(device)
                         model.device = device
                         model.eval()
                         
                         # Test the model
                         logger.info("Testing model with sample image")
                         test_img = Image.new("RGB", (64, 64), color=(128, 128, 128))
-                        _ = model(test_img)
                         
-                        logger.info("DepthAnythingV2 model loaded and tested successfully")
-                        return model
-                    else:
-                        logger.error(f"Unknown config: {config_name}")
-                except Exception as e:
-                    logger.error(f"Error loading DepthAnythingV2: {str(e)}")
-                    logger.debug(traceback.format_exc())
+                        try:
+                            _ = model(test_img)
+                            logger.info("DepthAnythingV2 model loaded and tested successfully")
+                            return model
+                        except Exception as test_error:
+                            logger.error(f"Error during model test: {str(test_error)}")
+                            logger.debug(traceback.format_exc())
+                    except Exception as e:
+                        logger.error(f"Error loading DepthAnythingV2: {str(e)}")
+                        logger.debug(traceback.format_exc())
             
-            # Fallback to MiDaS model for v1 or if V2 loading failed
+            # Fallback to MiDaS model if V2 loading failed or for V1 models
             try:
                 logger.info("Falling back to MiDaS model")
                 
