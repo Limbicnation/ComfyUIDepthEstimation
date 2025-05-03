@@ -382,12 +382,15 @@ class MiDaSWrapper:
                 target_height = ((original_height + 31) // 32) * 32
                 target_width = ((original_width + 31) // 32) * 32
                 
-                # Resize to dimensions that work well with the model
-                img_resized = image.resize((target_width, target_height), Image.LANCZOS)
+                # Keep original dimensions - don't force 384x384
+                # The caller should already have resized to the requested input_size
                 
-                # Log resize information
+                # Log resize information if needed
                 if (target_width != original_width) or (target_height != original_height):
-                    logger.info(f"Resized input from {original_width}x{original_height} to {target_width}x{target_height} (multiples of 32)")
+                    logger.info(f"Adjusting dimensions from {original_width}x{original_height} to {target_width}x{target_height} (multiples of 32)")
+                    img_resized = image.resize((target_width, target_height), Image.LANCZOS)
+                else:
+                    img_resized = image
                 
                 # Convert to numpy array
                 img_np = np.array(img_resized).astype(np.float32) / 255.0
@@ -448,15 +451,6 @@ class MiDaSWrapper:
                     else:  # Likely [B, H, W]
                         input_tensor = input_tensor.unsqueeze(1)  # Add channel dim [B, 1, H, W]
                         logger.info(f"Added channel dimension to BHW tensor: {input_tensor.shape}")
-                elif input_tensor.dim() == 4:
-                    # Should already be [B, C, H, W] but check channel dimension
-                    if input_tensor.shape[1] > 3:
-                        # Unusual channel count, might be wrong dimension order
-                        logger.warning(f"Unusual channel count ({input_tensor.shape[1]}), attempting to correct")
-                        # Try to correct - assuming it's [B, H, W, C] format
-                        if input_tensor.shape[3] <= 3:
-                            input_tensor = input_tensor.permute(0, 3, 1, 2)
-                            logger.info(f"Corrected dimension order to BCHW: {input_tensor.shape}")
                 
                 # Ensure proper shape after corrections
                 if input_tensor.dim() != 4:
@@ -487,7 +481,6 @@ class MiDaSWrapper:
                         # Reshape based on input dimensions
                         b, _, h, w = input_tensor.shape
                         output = output.reshape(b, 1, h, w)
-                        logger.info(f"Reshaped 1D output to 4D with shape: {output.shape}")
                     elif output.dim() == 2:  # [B, H*W] or similar
                         # Could be flattened spatial dimensions
                         b = output.shape[0]
@@ -496,24 +489,17 @@ class MiDaSWrapper:
                             w = h
                             if h * w == output.shape[1]:  # Perfect square
                                 output = output.reshape(b, 1, h, w)
-                                logger.info(f"Reshaped 2D output to 4D with shape: {output.shape}")
                             else:
                                 # Not a perfect square, use input dimensions
                                 _, _, h, w = input_tensor.shape
                                 output = output.reshape(b, 1, h, w)
-                                logger.info(f"Reshaped 2D output to 4D using input dimensions: {output.shape}")
                         else:
                             # Add dimensions to make 4D
                             output = output.unsqueeze(1).unsqueeze(1)
-                            logger.info(f"Added dimensions to 2D output: {output.shape}")
-                    elif output.dim() == 3:  # [B, C, H*W] or similar
-                        # Add height dimension explicitly 
-                        output = output.unsqueeze(2)
-                        logger.info(f"Added height dimension to 3D output: {output.shape}")
                     
                     # Ensure output has standard 4D shape (B,C,H,W) for interpolation
                     if output.dim() != 4:
-                        logger.warning(f"Output still has non-standard dimensions: {output.shape}, adding dimensions")
+                        logger.warning(f"Output has non-standard dimensions: {output.shape}, adding dimensions")
                         # Add dimensions until we have 4D
                         while output.dim() < 4:
                             output = output.unsqueeze(-1)
@@ -539,7 +525,6 @@ class MiDaSWrapper:
                             logger.error(f"Interpolation error: {resize_err}. Attempting to fix tensor shape.")
                             
                             # Last resort: create compatible tensor from output data
-                            # This ensures we always have a valid tensor regardless of shape issues
                             try:
                                 # Get data and reshape to simple 2D first
                                 output_data = output.view(-1).cpu().numpy()
@@ -559,12 +544,6 @@ class MiDaSWrapper:
                 except Exception as model_err:
                     logger.error(f"Model inference error: {model_err}")
                     logger.error(traceback.format_exc())
-                    
-                    # Create an error-specific fallback based on what went wrong
-                    if "CUDA out of memory" in str(model_err):
-                        logger.warning("CUDA out of memory error. Consider using force_cpu=True or a smaller model.")
-                    elif "Input type" in str(model_err) and "weight type" in str(model_err):
-                        logger.warning("Tensor type mismatch. This is likely a precision issue between float32 and float64.")
                     
                     # Create a visually distinguishable gradient pattern fallback
                     if isinstance(image, Image.Image):
@@ -591,30 +570,21 @@ class MiDaSWrapper:
             logger.error(f"Error in MiDaS inference: {e}")
             logger.error(traceback.format_exc())
             
-            # Create dimensions for the fallback tensor
+            # Return a placeholder depth map
             if isinstance(image, Image.Image):
                 w, h = image.size
+                dummy_tensor = torch.ones((1, 1, h, w), device=self.device)
             else:
                 # Try to get shape from tensor
-                try:
-                    shape = image.shape
-                    if len(shape) >= 4:  # BCHW format
-                        h, w = shape[2], shape[3]
-                    elif len(shape) == 3:
-                        if shape[0] <= 3:  # CHW format
-                            h, w = shape[1], shape[2]
-                        else:  # HWC format 
-                            h, w = shape[0], shape[1]
-                    else:
-                        h, w = 512, 512
-                except:
-                    # Default fallback dimensions
+                shape = image.shape
+                if len(shape) >= 3:
+                    if shape[0] == 3:  # CHW format
+                        h, w = shape[1], shape[2]
+                    else:  # HWC format 
+                        h, w = shape[0], shape[1]
+                else:
                     h, w = 512, 512
-            
-            # Create a gradient depth map as fallback - more useful than uniform color
-            dummy_tensor = torch.ones((1, 1, h, w), device=self.device, dtype=torch.float32)
-            y_coords = torch.linspace(0, 1, h).reshape(-1, 1).repeat(1, w).to(self.device)
-            dummy_tensor[0, 0, :, :] = y_coords
+                dummy_tensor = torch.ones((1, 1, h, w), device=self.device)
             
             return {"predicted_depth": dummy_tensor}
 
@@ -2338,7 +2308,9 @@ SOLUTION:
             try:
                 # Convert to PIL with robust error handling
                 pil_image = self.process_image(image, input_size)
-                logger.info(f"Image processed to size: {pil_image.size}")
+                # Store original dimensions for later resizing
+                original_width, original_height = pil_image.size
+                logger.info(f"Image processed to size: {pil_image.size} (will preserve these dimensions in output)")
             except Exception as img_error:
                 logger.error(f"Image processing error: {str(img_error)}")
                 logger.error(traceback.format_exc())
@@ -2373,6 +2345,9 @@ SOLUTION:
                     # Convert to PIL
                     img_np = (img_np * 255).astype(np.uint8)
                     pil_image = Image.fromarray(img_np)
+                    
+                    # Store original dimensions
+                    original_width, original_height = pil_image.size
                     
                     # Resize to appropriate dimensions
                     if input_size > 0:
@@ -2555,9 +2530,13 @@ SOLUTION:
                 # Scale to [0, 255] for PIL operations
                 depth_map_uint8 = (depth_map * 255.0).astype(np.uint8)
                 
+                # Log the depth map shape coming from the model
+                logger.info(f"Depth map shape from model: {depth_map_uint8.shape}")
+                
                 # Create PIL image explicitly with L mode (grayscale)
                 try:
                     depth_pil = Image.fromarray(depth_map_uint8, mode='L')
+                    logger.info(f"Depth PIL image size before resize: {depth_pil.size}")
                 except Exception as pil_error:
                     logger.error(f"Error creating PIL image: {str(pil_error)}")
                     # Try to reshape the array if dimensions are wrong
@@ -2573,6 +2552,16 @@ SOLUTION:
                             depth_map_uint8 = depth_map_uint8.reshape(h, w)
                         
                         depth_pil = Image.fromarray(depth_map_uint8, mode='L')
+                
+                # Resize depth map to original dimensions from input image before post-processing
+                # This is the key fix for the resolution issue
+                try:
+                    logger.info(f"Resizing depth map to original dimensions: {original_width}x{original_height}")
+                    depth_pil = depth_pil.resize((original_width, original_height), Image.BICUBIC)
+                    logger.info(f"Depth PIL image size after resize: {depth_pil.size}")
+                except Exception as resize_error:
+                    logger.error(f"Error resizing depth map: {str(resize_error)}")
+                    logger.error(traceback.format_exc())
                 
                 # Apply post-processing with parameter validation
                 # Apply blur if radius is positive
