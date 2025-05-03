@@ -552,17 +552,25 @@ Try these solutions:
                         corrected = np.power(depth_array, 1.0/gamma) * 255.0
                         depth_pil = Image.fromarray(corrected.astype(np.uint8), mode='L')
                 
-                # Convert to tensor - explicitly handle as grayscale
+                # Fix the tensor conversion:
                 depth_array = np.array(depth_pil).astype(np.float32) / 255.0
                 
-                # Make it compatible with ComfyUI by creating a 3-channel image
-                h, w = depth_array.shape
-                depth_rgb = np.stack([depth_array] * 3, axis=-1)  # Create proper 3D array with shape (h, w, 3)
+                # Make sure we preserve proper dimensions - this is the crucial fix
+                h, w = depth_array.shape  # Create RGB depth map by stacking the same grayscale image three times
+                depth_rgb = np.stack([depth_array] * 3, axis=-1)  # Shape becomes (h, w, 3)
                 
-                depth_tensor = torch.from_numpy(depth_rgb).unsqueeze(0)
+                # Convert to tensor and add batch dimension
+                depth_tensor = torch.from_numpy(depth_rgb).unsqueeze(0)  # Shape becomes (1, h, w, 3)
                 
-                if self.device is not None:
+                if self.device is not None and not force_cpu:
                     depth_tensor = depth_tensor.to(self.device)
+                
+                # Make sure it's normalized in [0, 1] range
+                if depth_tensor.max() > 1.0:
+                    depth_tensor = depth_tensor / 255.0
+                
+                # Debug: log tensor shape
+                logger.info(f"Output depth tensor shape: {depth_tensor.shape}")
                 
                 processing_time = time.time() - start_time
                 logger.info(f"Depth processing completed in {processing_time:.2f} seconds")
