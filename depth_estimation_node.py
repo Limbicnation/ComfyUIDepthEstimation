@@ -265,17 +265,17 @@ DEPTH_MODELS = {
         "encoder": "vitl"
     },
     "Depth-Anything-V2-Small": {
-        "path": "LiheYoung/depth-anything-v2-small-hf",  # Updated corrected path
+        "path": "depth-anything/Depth-Anything-V2-Small-hf",  # Updated corrected path as shown in example
         "vram_mb": 1500, 
-        "direct_url": "https://huggingface.co/LiheYoung/depth-anything-v2-small-hf/resolve/main/pytorch_model.bin",
+        "direct_url": "https://huggingface.co/depth-anything/Depth-Anything-V2-Small-hf/resolve/main/pytorch_model.bin",
         "model_type": "v2",
         "encoder": "vits",
         "config": MODEL_CONFIGS["vits"]
     },
     "Depth-Anything-V2-Base": {
-        "path": "LiheYoung/depth-anything-v2-base-hf",  # Updated corrected path
+        "path": "depth-anything/Depth-Anything-V2-Base-hf",  # Updated corrected path
         "vram_mb": 2500,
-        "direct_url": "https://huggingface.co/LiheYoung/depth-anything-v2-base-hf/resolve/main/pytorch_model.bin",
+        "direct_url": "https://huggingface.co/depth-anything/Depth-Anything-V2-Base-hf/resolve/main/pytorch_model.bin",
         "model_type": "v2",
         "encoder": "vitb",
         "config": MODEL_CONFIGS["vitb"]
@@ -683,9 +683,19 @@ class DepthEstimationNode:
                     model_path,  # Original path
                     model_path.replace("-hf", ""),  # Remove -hf suffix if it exists
                     model_path if "-hf" in model_path else model_path + "-hf",  # Add or keep -hf suffix
-                    "depth-anything/Depth-Anything-Small-hf" if "v2" in model_name.lower() else model_path,  # New V2 format
+                    
+                    # Try correct organization name for V2 models
+                    "depth-anything/Depth-Anything-V2-Small-hf" if "v2" in model_name.lower() and "small" in model_name.lower() else model_path,
+                    "depth-anything/Depth-Anything-V2-Base-hf" if "v2" in model_name.lower() and "base" in model_name.lower() else model_path,
+                    
+                    # Try alternative formats
+                    model_path.replace("LiheYoung", "depth-anything"),  # Try with depth-anything organization
+                    model_path.replace("depth-anything", "LiheYoung"),  # Try with LiheYoung organization
+                    
+                    # Fallbacks
                     "Intel/dpt-hybrid-midas",  # Midas model as fallback
-                    "LiheYoung/depth-anything-small"  # Fallback to regular Depth Anything model
+                    "LiheYoung/depth-anything-small",  # Fallback to regular Depth Anything model
+                    "depth-anything/Depth-Anything-Small-hf"  # One more fallback
                 ]
                 
                 # Log all paths we're going to try
@@ -884,6 +894,7 @@ AUTHENTICATION ERROR: The model couldn't be downloaded due to Hugging Face authe
 SOLUTION: 
 1. Use force_cpu=True in the node settings (this will use the MiDaS fallback model)
 2. Download the model manually using one of these direct links that don't require authentication:
+   - https://huggingface.co/depth-anything/Depth-Anything-V2-Small-hf/resolve/main/pytorch_model.bin
    - https://github.com/LiheYoung/Depth-Anything/releases/download/v2.0/depth_anything_v2_small.pt
    - https://huggingface.co/ckpt/depth-anything-v2/resolve/main/depth_anything_v2_small.pt
 
@@ -916,7 +927,7 @@ Failed to load model {model_name} after trying multiple sources.
 
 GENERAL SOLUTIONS:
 1. Download the model manually using one of these direct URLs:
-   - Depth-Anything-V2-Small: https://github.com/LiheYoung/Depth-Anything/releases/download/v2.0/depth_anything_v2_small.pt
+   - Depth-Anything-V2-Small: https://huggingface.co/depth-anything/Depth-Anything-V2-Small-hf/resolve/main/pytorch_model.bin
    - MiDaS Base: https://github.com/intel-isl/MiDaS/releases/download/v3/dpt_hybrid-midas-501f0c75.pt
 
 2. Try using force_cpu=True in node settings
@@ -1031,12 +1042,12 @@ SEARCHED DIRECTORIES:
             # List of alternative URLs that don't require authentication
             alternative_urls = {
                 "Depth-Anything-V2-Small": [
-                    "https://huggingface.co/LiheYoung/depth-anything-v2-small-hf/resolve/main/pytorch_model.bin",
+                    "https://huggingface.co/depth-anything/Depth-Anything-V2-Small-hf/resolve/main/pytorch_model.bin",
                     "https://github.com/LiheYoung/Depth-Anything/releases/download/v2.0/depth_anything_v2_small.pt",
                     "https://huggingface.co/ckpt/depth-anything-v2/resolve/main/depth_anything_v2_small.pt"
                 ],
                 "Depth-Anything-V2-Base": [
-                    "https://huggingface.co/LiheYoung/depth-anything-v2-base-hf/resolve/main/pytorch_model.bin",
+                    "https://huggingface.co/depth-anything/Depth-Anything-V2-Base-hf/resolve/main/pytorch_model.bin",
                     "https://github.com/LiheYoung/Depth-Anything/releases/download/v2.0/depth_anything_v2_base.pt",
                     "https://huggingface.co/ckpt/depth-anything-v2/resolve/main/depth_anything_v2_base.pt"
                 ],
