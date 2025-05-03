@@ -253,9 +253,9 @@ DEPTH_MODELS = {
     "Depth-Anything-Base": {
         "path": "LiheYoung/depth-anything-base-hf",  # Correct HF path for V1
         "vram_mb": 2500,
-        "direct_url": "https://github.com/LiheYoung/Depth-Anything/releases/download/v1.0/depth_anything_vitl14.pt",
+        "direct_url": "https://github.com/LiheYoung/Depth-Anything/releases/download/v1.0/depth_anything_vitb14.pt",
         "model_type": "v1",
-        "encoder": "vitl"
+        "encoder": "vitb"
     },
     "Depth-Anything-Large": {
         "path": "LiheYoung/depth-anything-large-hf",  # Correct HF path for V1
@@ -265,7 +265,7 @@ DEPTH_MODELS = {
         "encoder": "vitl"
     },
     "Depth-Anything-V2-Small": {
-        "path": "depth-anything/Depth-Anything-V2-Small-hf",  # Updated corrected path as shown in example
+        "path": "depth-anything/Depth-Anything-V2-Small-hf",  # Correct HF path for V2 Small
         "vram_mb": 1500, 
         "direct_url": "https://huggingface.co/depth-anything/Depth-Anything-V2-Small-hf/resolve/main/pytorch_model.bin",
         "model_type": "v2",
@@ -273,14 +273,22 @@ DEPTH_MODELS = {
         "config": MODEL_CONFIGS["vits"]
     },
     "Depth-Anything-V2-Base": {
-        "path": "depth-anything/Depth-Anything-V2-Base-hf",  # Updated corrected path
+        "path": "depth-anything/Depth-Anything-V2-Base-hf",  # Correct HF path for V2 Base
         "vram_mb": 2500,
         "direct_url": "https://huggingface.co/depth-anything/Depth-Anything-V2-Base-hf/resolve/main/pytorch_model.bin",
         "model_type": "v2",
         "encoder": "vitb",
         "config": MODEL_CONFIGS["vitb"]
     },
-    # Add MiDaS models as dedicated options with direct download URLs
+    "Depth-Anything-V2-Large": {
+        "path": "depth-anything/Depth-Anything-V2-Large-hf",  # Correct HF path for V2 Large
+        "vram_mb": 4000,
+        "direct_url": "https://huggingface.co/depth-anything/Depth-Anything-V2-Large-hf/resolve/main/pytorch_model.bin",
+        "model_type": "v2",
+        "encoder": "vitl",
+        "config": MODEL_CONFIGS["vitl"]
+    },
+    # MiDaS models as dedicated options with direct download URLs
     "MiDaS-Small": {
         "path": "Intel/dpt-hybrid-midas",
         "vram_mb": 1000,
@@ -858,6 +866,11 @@ class DepthEstimationNode:
                         "https://github.com/LiheYoung/Depth-Anything/releases/download/v2.0/depth_anything_v2_base.pt",
                         "https://huggingface.co/ckpt/depth-anything-v2/resolve/main/depth_anything_v2_base.pt"
                     ],
+                    "Depth-Anything-V2-Large": [
+                        "https://huggingface.co/depth-anything/Depth-Anything-V2-Large-hf/resolve/main/pytorch_model.bin",
+                        "https://github.com/LiheYoung/Depth-Anything/releases/download/v2.0/depth_anything_v2_large.pt",
+                        "https://huggingface.co/ckpt/depth-anything-v2/resolve/main/depth_anything_v2_large.pt"
+                    ],
                     "MiDaS-Small": [
                         "https://github.com/intel-isl/MiDaS/releases/download/v2_1/midas_v21_small_256.pt"
                     ],
@@ -975,6 +988,8 @@ class DepthEstimationNode:
                     model_paths_to_try.append("depth-anything/Depth-Anything-V2-Small-hf")
                 elif "base" in model_name.lower():
                     model_paths_to_try.append("depth-anything/Depth-Anything-V2-Base-hf")
+                elif "large" in model_name.lower():
+                    model_paths_to_try.append("depth-anything/Depth-Anything-V2-Large-hf")
                 
                 # Add variants with and without -hf suffix
                 model_paths_to_try.append(model_path.replace("-hf", ""))
@@ -1443,6 +1458,11 @@ SOLUTION:
                     "https://huggingface.co/depth-anything/Depth-Anything-V2-Base-hf/resolve/main/pytorch_model.bin",
                     "https://github.com/LiheYoung/Depth-Anything/releases/download/v2.0/depth_anything_v2_base.pt",
                     "https://huggingface.co/ckpt/depth-anything-v2/resolve/main/depth_anything_v2_base.pt"
+                ],
+                "Depth-Anything-V2-Large": [
+                    "https://huggingface.co/depth-anything/Depth-Anything-V2-Large-hf/resolve/main/pytorch_model.bin",
+                    "https://github.com/LiheYoung/Depth-Anything/releases/download/v2.0/depth_anything_v2_large.pt",
+                    "https://huggingface.co/ckpt/depth-anything-v2/resolve/main/depth_anything_v2_large.pt"
                 ],
                 "MiDaS-Base": [
                     "https://github.com/intel-isl/MiDaS/releases/download/v3/dpt_hybrid-midas-501f0c75.pt"
@@ -2041,26 +2061,6 @@ SOLUTION:
         """Create a basic error image when no input dimensions are available."""
         # Standard size error image (512x512)
         h, w = 512, 512
-        # Gray background with slight red tint to indicate error - explicitly use float32
-        placeholder = torch.ones((1, h, w, 3), dtype=torch.float32) * torch.tensor([0.5, 0.4, 0.4], dtype=torch.float32)
-        
-        if self.device is not None:
-            placeholder = placeholder.to(self.device)
-            
-        # Double-check that we're returning a float32 tensor
-        if placeholder.dtype != torch.float32:
-            placeholder = placeholder.float()
-            
-        return placeholder
-    
-    def _add_error_text_to_image(self, image_tensor, error_text):
-        """Add error text to the image tensor for visual feedback."""
-        try:
-            # Convert tensor to PIL for text rendering
-            if image_tensor is None:
-                return
-                
-            temp_img = self._tensor_to_pil(image_tensor)
             
             # Draw error text
             draw = ImageDraw.Draw(temp_img)
