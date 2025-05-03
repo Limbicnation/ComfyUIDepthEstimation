@@ -12,7 +12,7 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("DepthEstimation")
 
 # Version info
-__version__ = "1.0.0"
+__version__ = "1.1.0"
 
 # Node class mappings - will be populated based on dependency checks
 NODE_CLASS_MAPPINGS = {}
@@ -26,7 +26,7 @@ required_dependencies = {
     "torch": "2.0.0",
     "transformers": "4.20.0",
     "numpy": "1.23.0",
-    "PIL": "9.1.0",  # Pillow is imported as PIL
+    "PIL": "9.2.0",  # Pillow is imported as PIL
     "timm": "0.6.12",
     "huggingface_hub": "0.16.0"
 }
@@ -82,45 +82,23 @@ if missing_dependencies:
 else:
     # All dependencies are available, import the actual node
     try:
-        # Try to import the improved node implementation first
-        from .depth_estimation_node_improved import DepthEstimationNode, NodeDiagnostics
-        logger.info("Using improved depth estimation node implementation")
-        
-        # Run diagnostics on startup
-        try:
-            if NodeDiagnostics:
-                diag_info = NodeDiagnostics.get_system_info()
-                logger.info(f"System info: Python {diag_info['python_version'].split()[0]}, "
-                           f"Torch {diag_info['torch_version']}, "
-                           f"CUDA: {diag_info['cuda_available']}")
-                
-                health = NodeDiagnostics.check_health()
-                issues = [check for check in health if check["status"] == "fail"]
-                if issues:
-                    logger.warning(f"Found {len(issues)} potential issues: "
-                                  f"{', '.join([issue['name'] for issue in issues])}")
-        except Exception as e:
-            logger.warning(f"Error running diagnostics: {e}")
-        
+        # Import the current implementation
+        from .depth_estimation_node import DepthEstimationNode
+        logger.info("Successfully loaded depth estimation node")
     except ImportError as e:
-        logger.warning(f"Could not import improved node: {e}. Falling back to original implementation.")
-        # Fallback to original implementation
-        try:
-            from .depth_estimation_node import DepthEstimationNode
-        except ImportError as e:
-            logger.error(f"Failed to import main node implementation: {e}")
+        logger.error(f"Failed to import node implementation: {e}")
+        
+        # Create minimal placeholder if the import fails
+        class DepthEstimationNode:
+            @classmethod
+            def INPUT_TYPES(cls):
+                return {"required": {"image": ("IMAGE",)}}
+            RETURN_TYPES = ("IMAGE",)
+            FUNCTION = "estimate_depth"
+            CATEGORY = "depth"
             
-            # Create minimal placeholder if even the fallback fails
-            class DepthEstimationNode:
-                @classmethod
-                def INPUT_TYPES(cls):
-                    return {"required": {"image": ("IMAGE",)}}
-                RETURN_TYPES = ("IMAGE",)
-                FUNCTION = "estimate_depth"
-                CATEGORY = "depth"
-                
-                def estimate_depth(self, image):
-                    return (image,)  # Just pass through the image
+            def estimate_depth(self, image):
+                return (image,)  # Just pass through the image
     
     # Register the actual depth estimation node
     NODE_CLASS_MAPPINGS = {
