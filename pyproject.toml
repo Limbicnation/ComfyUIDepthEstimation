@@ -1,15 +1,21 @@
 [project]
 name = "comfyuidepthestimation"
-description = "A custom depth estimation node for ComfyUI using transformer models. It integrates depth estimation with automatic gamma correction, contrast adjustment, and edge detection, based on the [a/TransformDepth](https://github.com/Limbicnation/TransformDepth) repository."
-version = "1.0.0"
+description = "A robust custom depth estimation node for ComfyUI using Depth-Anything models. It integrates depth estimation with configurable post-processing options including blur, median filtering, contrast enhancement, and gamma correction."
+version = "1.1.0"
 license = { file = "LICENSE" }
-dependencies = ["transformers==4.12.3", "Pillow==8.4.0", "numpy==1.21.2", "# Add other necessary dependencies without specifying torch again"]
+dependencies = [
+    "transformers>=4.20.0",
+    "Pillow>=9.1.0",
+    "numpy>=1.23.0",
+    "timm>=0.6.12",
+    "huggingface-hub>=0.16.0"
+]
 
 [project.urls]
 Repository = "https://github.com/Limbicnation/ComfyUIDepthEstimation"
 #  Used by Comfy Registry https://comfyregistry.org
 
 [tool.comfy]
-PublisherId = ""
-DisplayName = "ComfyUIDepthEstimation"
-Icon = ""
+PublisherId = "Limbicnation"
+DisplayName = "Depth Estimation Node"
+Icon = "images/depth-estimation-icon.png"
