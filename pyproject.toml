@@ -16,6 +16,6 @@ Repository = "https://github.com/Limbicnation/ComfyUIDepthEstimation"
 #  Used by Comfy Registry https://comfyregistry.org
 
 [tool.comfy]
-PublisherId = "Limbicnation"
+PublisherId = "limbicnation"
 DisplayName = "Depth Estimation Node"
 Icon = "images/depth-estimation-icon.png"
