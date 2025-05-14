@@ -9,10 +9,10 @@ tokenizers>=0.13.3  # Pre-built version compatible with most platforms
 transformers>=4.20.0  # Required for Depth Anything models, but ComfyUI may have a specific version
 
 # Pillow (PIL Fork) - Compatibility with other ComfyUI nodes
-Pillow>=9.2.0  # Ensures compatibility with nodes requiring >=9.2.0
+# Don't specify Pillow version to avoid conflicts with ComfyUI environment
 
 # NumPy - Using version that properly supports numpy.dtypes
-numpy>=1.23.0  # Resolves compatibility issues
+# Don't specify version to avoid conflicts with ComfyUI environment
 
 # Additional dependencies specific to depth estimation node
 timm>=0.6.12  # Required for Depth Anything models
