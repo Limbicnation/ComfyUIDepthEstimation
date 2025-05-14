@@ -613,10 +613,10 @@ class DepthEstimationNode:
                 "image": ("IMAGE",),
                 "model_name": (list(DEPTH_MODELS.keys()),),
                 # Ensure minimum size is enforced by the UI
-                "input_size": ("INT", {"default": 518, "min": 256, "max": 1024, "step": 1}),
+                "input_size": ("INT", {"default": 1024, "min": 256, "max": 1024, "step": 1}),
                 "blur_radius": ("FLOAT", {"default": 2.0, "min": 0.0, "max": 10.0, "step": 0.1}),
                 # Define median_size as a dropdown with specific string values
-                "median_size": (cls.MEDIAN_SIZES, {"default": "5"}),
+                "median_size": (cls.MEDIAN_SIZES, {"default": "3"}),
                 "apply_auto_contrast": ("BOOLEAN", {"default": True}),
                 "apply_gamma": ("BOOLEAN", {"default": True})
             },
