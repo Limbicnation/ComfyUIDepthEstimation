@@ -12,7 +12,7 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("DepthEstimation")
 
 # Version info
-__version__ = "1.1.0"
+__version__ = "1.1.1"
 
 # Node class mappings - will be populated based on dependency checks
 NODE_CLASS_MAPPINGS = {}
