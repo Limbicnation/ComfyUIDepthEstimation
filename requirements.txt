@@ -25,3 +25,7 @@ wget>=3.2  # For reliable model downloading
 
 # Network dependencies
 requests>=2.27.0  # For model downloading
+
+# Optional dependencies for DA3 (Depth Anything V3) support
+# Uncomment the following line to enable DA3 models (Apache 2.0 licensed)
+# depth-anything-v3>=0.1.0

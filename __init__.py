@@ -12,7 +12,7 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("DepthEstimation")
 
 # Version info
-__version__ = "1.1.1"
+__version__ = "1.2.0"
 
 # Node class mappings - will be populated based on dependency checks
 NODE_CLASS_MAPPINGS = {}
@@ -31,7 +31,14 @@ required_dependencies = {
     "huggingface_hub": "0.16.0"
 }
 
+# Optional dependencies for DA3 (Depth Anything V3) support
+# Node works without these but DA3 models will not be available
+optional_dependencies = {
+    "depth_anything_v3": "0.1.0"  # For DA3 models
+}
+
 missing_dependencies = []
+DA3_AVAILABLE = False
 
 # Check each dependency
 for module_name, min_version in required_dependencies.items():
@@ -48,6 +55,17 @@ for module_name, min_version in required_dependencies.items():
     except ImportError:
         missing_dependencies.append(f"{module_name}>={min_version}")
         logger.warning(f"Missing required dependency: {module_name}>={min_version}")
+
+# Check optional DA3 dependencies
+for module_name, min_version in optional_dependencies.items():
+    try:
+        module = __import__(module_name)
+        module_version = getattr(module, "__version__", "unknown")
+        logger.info(f"Found optional {module_name} version {module_version}")
+        if module_name == "depth_anything_v3":
+            DA3_AVAILABLE = True
+    except ImportError:
+        logger.info(f"Optional dependency {module_name} not installed. DA3 models will not be available.")
 
 if missing_dependencies:
     # Create placeholder node with dependency error
@@ -123,5 +141,6 @@ __all__ = [
     "NODE_CLASS_MAPPINGS",
     "NODE_DISPLAY_NAME_MAPPINGS",
     "__version__",
-    "WEB_DIRECTORY"
+    "WEB_DIRECTORY",
+    "DA3_AVAILABLE"
 ]
