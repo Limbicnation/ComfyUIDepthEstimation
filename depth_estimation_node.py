@@ -25,13 +25,12 @@ except ImportError:
     TIMM_AVAILABLE = False
     print("Warning: timm not available. Direct loading of Depth Anything models may not work.")
 
-# Try to import Depth Anything V3 (optional - for DA3 models)
-try:
-    from depth_anything_v3 import DepthAnythingV3
-    DA3_AVAILABLE = True
-except ImportError:
-    DA3_AVAILABLE = False
-    print("Info: depth_anything_v3 not installed. DA3 models will not be available.")
+# Import DA3 availability status from the package's __init__
+from . import DA3_AVAILABLE
+
+# Conditionally import Depth Anything V3 if available
+if DA3_AVAILABLE:
+    from depth_anything_3.api import DepthAnything3
 
 # Setup logging
 logging.basicConfig(level=logging.INFO)
@@ -684,7 +683,7 @@ class DA3ModelWrapper:
 
             # Stack and convert to tensor
             depth_array = np.stack(normalized_depths, axis=0)  # [N, H, W]
-            depth_tensor = torch.from_numpy(depth_array).float()
+            depth_tensor = torch.from_numpy(depth_array).float().to(self.device)
 
             if not is_batch:
                 depth_tensor = depth_tensor.squeeze(0)  # [H, W] for single image
@@ -955,18 +954,18 @@ class DepthEstimationNode:
                     raise RuntimeError(
                         f"DA3 model '{model_name}' requested but depth_anything_v3 package not installed. "
                         "Please install with: pip install depth-anything-v3"
+                        f"DA3 model '{model_name}' requested but depth_anything_3 package not installed. "
+                        "Please install with: pip install depth-anything-3"
                     )
 
                 logger.info(f"Loading DA3 model: {model_name} using Depth Anything V3 API")
                 try:
                     # Load DA3 model from HuggingFace
-                    da3_model = DepthAnythingV3.from_pretrained(model_path)
+                    da3_model = DepthAnything3.from_pretrained(model_path)
 
                     # Move to appropriate device
-                    if force_cpu:
-                        da3_model = da3_model.to('cpu')
-                    else:
-                        da3_model = da3_model.to(self.device)
+                    target_device = self.device if not force_cpu else 'cpu'
+                    da3_model = da3_model.to(target_device)
 
                     # Set to eval mode
                     da3_model.eval()

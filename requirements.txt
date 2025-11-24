@@ -2,7 +2,7 @@
 # Note: These are minimum requirements. ComfyUI's environment may provide newer versions.
 
 # Fix for protobuf errors with transformers
-protobuf==3.20.3
+protobuf>=3.20.3
 
 # Core dependencies
 tokenizers>=0.13.3  # Pre-built version compatible with most platforms
@@ -28,4 +28,4 @@ requests>=2.27.0  # For model downloading
 
 # Optional dependencies for DA3 (Depth Anything V3) support
 # Uncomment the following line to enable DA3 models (Apache 2.0 licensed)
-# depth-anything-v3>=0.1.0
+# depth-anything-3 @ git+https://github.com/ByteDance-Seed/Depth-Anything-3.git

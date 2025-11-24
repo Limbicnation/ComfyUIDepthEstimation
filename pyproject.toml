@@ -15,7 +15,7 @@ dependencies = [
 
 [project.optional-dependencies]
 # DA3 (Depth Anything V3) support - Apache 2.0 licensed models
-da3 = ["depth-anything-v3>=0.1.0"]
+da3 = ["depth-anything-3"]
 
 [project.urls]
 Repository = "https://github.com/Limbicnation/ComfyUIDepthEstimation"

@@ -34,7 +34,7 @@ required_dependencies = {
 # Optional dependencies for DA3 (Depth Anything V3) support
 # Node works without these but DA3 models will not be available
 optional_dependencies = {
-    "depth_anything_v3": "0.1.0"  # For DA3 models
+    "depth_anything_3": "0.0.0"  # For DA3 models
 }
 
 missing_dependencies = []
@@ -60,10 +60,15 @@ for module_name, min_version in required_dependencies.items():
 for module_name, min_version in optional_dependencies.items():
     try:
         module = __import__(module_name)
-        module_version = getattr(module, "__version__", "unknown")
+        module_version = getattr(module, "__version__", "0.0.0")
+        
         logger.info(f"Found optional {module_name} version {module_version}")
-        if module_name == "depth_anything_v3":
+        
+        # Compare versions. This simple check works for "X.Y.Z" formats.
+        # Note: depth_anything_3 might report 0.0.0 if installed from git without version tag
+        if module_name == "depth_anything_3":
             DA3_AVAILABLE = True
+            
     except ImportError:
         logger.info(f"Optional dependency {module_name} not installed. DA3 models will not be available.")
 
