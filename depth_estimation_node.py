@@ -661,7 +661,7 @@ class DA3ModelWrapper:
 
             # DA3 inference
             with torch.inference_mode():
-                prediction = self.model.infer(images)
+                prediction = self.model.inference(images)
 
             # Extract depth maps from prediction
             # DA3 returns prediction.depth as [N, H, W] numpy array
