@@ -12,7 +12,7 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("DepthEstimation")
 
 # Version info
-__version__ = "1.1.1"
+__version__ = "1.2.0"
 
 # Node class mappings - will be populated based on dependency checks
 NODE_CLASS_MAPPINGS = {}
@@ -31,7 +31,14 @@ required_dependencies = {
     "huggingface_hub": "0.16.0"
 }
 
+# Optional dependencies for DA3 (Depth Anything V3) support
+# Node works without these but DA3 models will not be available
+optional_dependencies = {
+    "depth_anything_3": "0.0.0"  # For DA3 models
+}
+
 missing_dependencies = []
+DA3_AVAILABLE = False
 
 # Check each dependency
 for module_name, min_version in required_dependencies.items():
@@ -48,6 +55,32 @@ for module_name, min_version in required_dependencies.items():
     except ImportError:
         missing_dependencies.append(f"{module_name}>={min_version}")
         logger.warning(f"Missing required dependency: {module_name}>={min_version}")
+
+# Check optional DA3 dependencies
+for module_name, min_version in optional_dependencies.items():
+    try:
+        module = __import__(module_name)
+        module_version = getattr(module, "__version__", "0.0.0")
+        
+        logger.info(f"Found optional {module_name} version {module_version}")
+        
+    except ImportError:
+        logger.info(f"Optional dependency {module_name} not installed. DA3 models will not be available.")
+    except Exception as e:
+        logger.warning(f"Error checking version for {module_name}: {e}. DA3 models might not work correctly.")
+
+    # Version comparison
+    if module_name == "depth_anything_3" and "module_version" in locals():
+        try:
+            # Compare versions. This simple check works for "X.Y.Z" formats.
+            if tuple(map(int, module_version.split('.'))) >= tuple(map(int, min_version.split('.'))):
+                DA3_AVAILABLE = True
+            else:
+                logger.warning(f"Optional dependency {module_name} version {module_version} is older than required {min_version}. DA3 models may not be available or work correctly.")
+        except ValueError:
+            # Fallback for non-standard version strings (e.g. from git)
+            logger.info(f"Could not parse version {module_version} for {module_name}. Assuming compatible.")
+            DA3_AVAILABLE = True
 
 if missing_dependencies:
     # Create placeholder node with dependency error
@@ -123,5 +156,6 @@ __all__ = [
     "NODE_CLASS_MAPPINGS",
     "NODE_DISPLAY_NAME_MAPPINGS",
     "__version__",
-    "WEB_DIRECTORY"
+    "WEB_DIRECTORY",
+    "DA3_AVAILABLE"
 ]
