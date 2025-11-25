@@ -13,6 +13,8 @@ A robust custom depth estimation node for ComfyUI using Depth-Anything models to
   - Depth-Anything-Large
   - Depth-Anything-V2-Small
   - Depth-Anything-V2-Base
+  - Depth-Anything-V3-Small (Requires optional dependency)
+  - Depth-Anything-V3-Base (Requires optional dependency)
 - Post-processing options:
   - Gaussian blur (adjustable radius)
   - Median filtering (configurable size)
@@ -44,6 +46,11 @@ A robust custom depth estimation node for ComfyUI using Depth-Anything models to
    ```bash
    cd ComfyUIDepthEstimation
    pip install -r requirements.txt
+   ```
+
+4. (Optional) To enable Depth Anything V3 models:
+   ```bash
+   pip install git+https://github.com/ByteDance-Seed/Depth-Anything-3.git
    ```
 
 4. Restart ComfyUI to load the new custom node.
@@ -91,6 +98,8 @@ A robust custom depth estimation node for ComfyUI using Depth-Anything models to
 | Depth-Anything-Small | Good | ~1.5 GB | Fast |
 | Depth-Anything-V2-Base | Better | ~2.5 GB | Medium |
 | Depth-Anything-Base | Better | ~2.5 GB | Medium |
+| Depth-Anything-V3-Small | Excellent | ~2.0 GB | Fast |
+| Depth-Anything-V3-Base | Superior | ~2.5 GB | Medium |
 | Depth-Anything-Large | Best | ~4.0 GB | Slow |
 
 ## Troubleshooting Guide
