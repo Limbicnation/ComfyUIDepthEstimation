@@ -66,6 +66,12 @@ A robust custom depth estimation node for ComfyUI using Depth-Anything models to
   <img src="images/depth_map_generator_showcase.jpg" width="600" alt="Depth Map Generator Showcase">
 </div>
 
+### Example Results (Depth Anything V3)
+<div align="center">
+  <img src="images/saurian_input.jpg" width="45%" alt="Input Image">
+  <img src="images/da3_output.png" width="45%" alt="DA3 Output">
+</div>
+
 ### Node Parameters
 
 #### Required Parameters
@@ -82,6 +88,7 @@ A robust custom depth estimation node for ComfyUI using Depth-Anything models to
 
 ### Example Usage
 1. Add the `Depth Estimation` node to your ComfyUI workflow
+   - *Tip: You can find example workflows in the `workflows/` directory.*
 2. Connect an image source to the node's image input
 3. Configure the parameters:
    - Select a model (e.g., "Depth-Anything-V2-Small" is fastest)
