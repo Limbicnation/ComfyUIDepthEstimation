@@ -64,13 +64,23 @@ for module_name, min_version in optional_dependencies.items():
         
         logger.info(f"Found optional {module_name} version {module_version}")
         
-        # Compare versions. This simple check works for "X.Y.Z" formats.
-        # Note: depth_anything_3 might report 0.0.0 if installed from git without version tag
-        if module_name == "depth_anything_3":
-            DA3_AVAILABLE = True
-            
     except ImportError:
         logger.info(f"Optional dependency {module_name} not installed. DA3 models will not be available.")
+    except Exception as e:
+        logger.warning(f"Error checking version for {module_name}: {e}. DA3 models might not work correctly.")
+
+    # Version comparison
+    if module_name == "depth_anything_3" and "module_version" in locals():
+        try:
+            # Compare versions. This simple check works for "X.Y.Z" formats.
+            if tuple(map(int, module_version.split('.'))) >= tuple(map(int, min_version.split('.'))):
+                DA3_AVAILABLE = True
+            else:
+                logger.warning(f"Optional dependency {module_name} version {module_version} is older than required {min_version}. DA3 models may not be available or work correctly.")
+        except ValueError:
+            # Fallback for non-standard version strings (e.g. from git)
+            logger.info(f"Could not parse version {module_version} for {module_name}. Assuming compatible.")
+            DA3_AVAILABLE = True
 
 if missing_dependencies:
     # Create placeholder node with dependency error
