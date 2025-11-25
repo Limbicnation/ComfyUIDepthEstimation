@@ -86,6 +86,9 @@ A robust custom depth estimation node for ComfyUI using Depth-Anything models to
 - **force_reload**: Force the model to reload (useful for troubleshooting)
 - **force_cpu**: Use CPU for processing instead of GPU (slower but more compatible)
 
+### Video Processing
+The node supports video processing via batch inputs. You can load a video using standard ComfyUI video loaders (e.g., "Load Video") or "Load Images from Folder", which pass frames as a batch. The node processes the entire batch efficiently.
+
 ### Example Usage
 1. Add the `Depth Estimation` node to your ComfyUI workflow
    - *Tip: You can find example workflows in the `workflows/` directory.*
