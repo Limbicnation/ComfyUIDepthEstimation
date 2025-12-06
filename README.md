@@ -21,9 +21,11 @@ A robust custom depth estimation node for ComfyUI using Depth-Anything models to
   - Median filtering (configurable size)
   - Automatic contrast enhancement
   - Gamma correction
-- Advanced options:
+- **Advanced options**:
   - Force CPU processing for compatibility
   - Force model reload for troubleshooting
+  - **Camera Estimation** (New in v1.3.4): Extract camera extrinsics and intrinsics (DA3 models only)
+  - **Raw Depth Output**: Option to output metric depth for point clouds
 
 ## Installation
 
@@ -95,6 +97,20 @@ A robust custom depth estimation node for ComfyUI using Depth-Anything models to
 
 - **force_reload**: Force the model to reload (useful for troubleshooting)
 - **force_cpu**: Use CPU for processing instead of GPU (slower but more compatible)
+- **enable_camera_estimation**: Enable extraction of camera pose data (DA3 models only)
+- **output_raw_depth**: Output raw metric depth values instead of normalized 0-1 map (useful for 3D reconstruction)
+
+### Outputs
+
+The node provides **5 outputs** for maximum flexibility:
+
+1. **depth** (IMAGE): Standard normalized depth map (0-1, grayscale)
+2. **confidence** (IMAGE): Confidence map visualization
+3. **extrinsics** (CAMERA_EXTRINSICS): [N, 3, 4] Tensor of camera extrinsics (OpenCV format)
+4. **intrinsics** (CAMERA_INTRINSICS): [N, 3, 3] Tensor of camera intrinsics
+5. **camera_json** (STRING): JSON string containing all camera parameters and metadata
+
+> **Note:** For non-DA3 models, the camera outputs will be empty/None.
 
 ### Video Processing
 
