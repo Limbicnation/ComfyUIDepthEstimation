@@ -16,6 +16,11 @@ import logging
 import torch.nn as nn
 import torch.nn.functional as F
 from typing import Tuple, List, Dict, Any, Optional, Union
+from dataclasses import dataclass
+
+# Custom ComfyUI type definitions for camera parameters
+CAMERA_EXTRINSICS = "CAMERA_EXTRINSICS"
+CAMERA_INTRINSICS = "CAMERA_INTRINSICS"
 
 # Try to import timm (for vision transformers)
 try:
@@ -309,6 +314,7 @@ DEPTH_MODELS = {
         "encoder": "vits",
         "license": "Apache-2.0",
         "supports_batch": True,  # Multi-view support
+        "supports_pose": True,
         "params": "80M"
     },
     "Depth-Anything-V3-Base": {
@@ -318,8 +324,63 @@ DEPTH_MODELS = {
         "encoder": "vitb",
         "license": "Apache-2.0",
         "supports_batch": True,  # Multi-view support
+        "supports_pose": True,
         "params": "120M"
-    }
+    },
+    "Depth-Anything-V3-Large": {
+        "path": "depth-anything/DA3-Large",
+        "vram_mb": 4000,
+        "model_type": "v3",
+        "encoder": "vitl",
+        "license": "CC BY-NC 4.0",
+        "supports_batch": True,
+        "supports_pose": True,
+        "params": "350M"
+    },
+    "Depth-Anything-V3-Giant": {
+        "path": "depth-anything/DA3-Giant",
+        "vram_mb": 6000,
+        "model_type": "v3",
+        "encoder": "vitg",
+        "license": "CC BY-NC 4.0",
+        "supports_batch": True,
+        "supports_pose": True,
+        "params": "1.15B"
+    },
+    "Depth-Anything-V3-Nested-Giant-Large": {
+        "path": "depth-anything/DA3NESTED-GIANT-LARGE",
+        "vram_mb": 7000,
+        "model_type": "v3",
+        "encoder": "nested",
+        "license": "CC BY-NC 4.0",
+        "supports_batch": True,
+        "supports_pose": True,
+        "metric_scaling": True,
+        "params": "1.4B"
+    },
+    "Depth-Anything-V3-Mono-Large": {
+        "path": "depth-anything/DA3Mono-Large",
+        "vram_mb": 4000,
+        "model_type": "v3",
+        "encoder": "vitl",
+        "license": "Apache-2.0",
+        "supports_batch": False,
+        "supports_pose": False,
+        "params": "350M",
+        "note": "Monocular only, no camera estimation"
+    },
+    "Depth-Anything-V3-Metric-Large": {
+        "path": "depth-anything/DA3Metric-Large",
+        "vram_mb": 4000,
+        "model_type": "v3",
+        "encoder": "vitl",
+        "license": "Apache-2.0",
+        "supports_batch": False,
+        "supports_pose": False,
+        "metric_depth": True,
+        "params": "350M",
+        "note": "Metric depth only, no camera estimation"
+    },
 }
 
 class MiDaSWrapper:
@@ -615,43 +676,41 @@ class MiDaSWrapper:
             
             return {"predicted_depth": dummy_tensor}
 
+@dataclass
+class DA3Prediction:
+    """
+    Structured output from DA3 models containing all prediction fields.
+    """
+    depth: torch.Tensor  # [N, H, W] normalized 0-1
+    confidence: Optional[torch.Tensor] = None  # [N, H, W] or None
+    extrinsics: Optional[torch.Tensor] = None  # [N, 3, 4] or None
+    intrinsics: Optional[torch.Tensor] = None  # [N, 3, 3] or None
+    processed_images: Optional[torch.Tensor] = None  # [N, H, W, 3] uint8
+    raw_depth: Optional[torch.Tensor] = None  # [N, H, W] unnormalized
+    supports_pose: bool = False
 
 class DA3ModelWrapper:
     """
-    Wrapper to make Depth Anything V3 API compatible with existing node interface.
-
-    DA3 uses a different API and output format than V1/V2, so this wrapper normalizes
-    the output to be compatible with the existing post-processing pipeline.
-
-    Supports both single images and batches for multi-view depth estimation.
+    Enhanced wrapper for Depth Anything V3 API.
     """
-
-    def __init__(self, model, device):
-        """
-        Initialize the DA3 wrapper.
-
-        Args:
-            model: The loaded DA3 model instance
-            device: The device to run inference on (cuda/cpu)
-        """
+    def __init__(self, model, device, model_name: str):
         self.model = model
         self.device = device
-        logger.info(f"DA3ModelWrapper initialized on device: {device}")
+        self.model_name = model_name
+        self.supports_pose = self._check_pose_support(model_name)
+        logger.info(f"DA3ModelWrapper initialized: {model_name}, Pose support: {self.supports_pose}, Device: {device}")
 
-    def __call__(self, image: Union[Image.Image, List[Image.Image]]) -> dict:
-        """
-        Run inference and return in V1/V2 compatible format.
+    def _check_pose_support(self, model_name: str) -> bool:
+        model_lower = model_name.lower()
+        if "mono" in model_lower or "metric" in model_lower:
+            return False
+        if "v3" in model_lower or "da3" in model_lower:
+            if any(variant in model_lower for variant in ["small", "base", "large", "giant", "nested"]):
+                return True
+        return False
 
-        Supports both single images and batches for multi-view depth estimation.
-
-        Args:
-            image: Single PIL Image or list of PIL Images for batch processing
-
-        Returns:
-            Dictionary with 'predicted_depth' key containing the depth tensor
-        """
+    def __call__(self, image: Union[Image.Image, List[Image.Image]]) -> DA3Prediction:
         try:
-            # Handle single image or batch
             if isinstance(image, Image.Image):
                 images = [image]
                 is_batch = False
@@ -659,64 +718,83 @@ class DA3ModelWrapper:
                 images = list(image)
                 is_batch = True
 
-            # DA3 inference
             with torch.inference_mode():
                 prediction = self.model.inference(images)
 
-            # Extract depth maps from prediction
-            # DA3 returns prediction.depth as [N, H, W] numpy array
-            if hasattr(prediction, 'depth'):
-                depths = prediction.depth  # [N, H, W] numpy array
-            else:
-                # Fallback if prediction format differs
-                depths = np.array(prediction)
+            # Extract depth maps
+            raw_depths = prediction.depth if hasattr(prediction, 'depth') else np.array(prediction)
 
-            # Normalize each depth map to [0, 1] range
+            # Normalize depths
             normalized_depths = []
-            for depth in depths:
+            for depth in raw_depths:
                 depth_min, depth_max = depth.min(), depth.max()
                 if depth_max - depth_min > 1e-6:
-                    depth = (depth - depth_min) / (depth_max - depth_min)
+                    norm_depth = (depth - depth_min) / (depth_max - depth_min)
                 else:
-                    depth = np.zeros_like(depth)
-                normalized_depths.append(depth)
+                    norm_depth = np.zeros_like(depth)
+                normalized_depths.append(norm_depth)
 
-            # Stack and convert to tensor
-            depth_array = np.stack(normalized_depths, axis=0)  # [N, H, W]
+            depth_array = np.stack(normalized_depths, axis=0)
             depth_tensor = torch.from_numpy(depth_array).float().to(self.device)
+            raw_depth_tensor = torch.from_numpy(raw_depths).float().to(self.device)
 
+            # Extract confidence
+            confidence_tensor = None
+            if hasattr(prediction, 'conf') and prediction.conf is not None:
+                conf_array = prediction.conf
+                confidence_tensor = torch.from_numpy(conf_array).float().to(self.device)
+
+            # Extract camera parameters
+            extrinsics_tensor = None
+            intrinsics_tensor = None
+            if self.supports_pose:
+                if hasattr(prediction, 'extrinsics') and prediction.extrinsics is not None:
+                    ext_array = prediction.extrinsics
+                    extrinsics_tensor = torch.from_numpy(ext_array).float().to(self.device)
+                if hasattr(prediction, 'intrinsics') and prediction.intrinsics is not None:
+                    int_array = prediction.intrinsics
+                    intrinsics_tensor = torch.from_numpy(int_array).float().to(self.device)
+
+            # Extract processed images
+            processed_tensor = None
+            if hasattr(prediction, 'processed_images') and prediction.processed_images is not None:
+                proc_array = prediction.processed_images
+                processed_tensor = torch.from_numpy(proc_array).to(self.device)
+
+            # Handle single image case
             if not is_batch:
-                depth_tensor = depth_tensor.squeeze(0)  # [H, W] for single image
+                depth_tensor = depth_tensor.squeeze(0)
+                raw_depth_tensor = raw_depth_tensor.squeeze(0)
+                if confidence_tensor is not None: confidence_tensor = confidence_tensor.squeeze(0)
+                if extrinsics_tensor is not None: extrinsics_tensor = extrinsics_tensor.squeeze(0)
+                if intrinsics_tensor is not None: intrinsics_tensor = intrinsics_tensor.squeeze(0)
+                if processed_tensor is not None: processed_tensor = processed_tensor.squeeze(0)
 
-            logger.info(f"DA3 inference complete. Output shape: {depth_tensor.shape}")
-
-            return {"predicted_depth": depth_tensor}
+            return DA3Prediction(
+                depth=depth_tensor,
+                confidence=confidence_tensor,
+                extrinsics=extrinsics_tensor,
+                intrinsics=intrinsics_tensor,
+                processed_images=processed_tensor,
+                raw_depth=raw_depth_tensor,
+                supports_pose=self.supports_pose
+            )
 
         except Exception as e:
             logger.error(f"Error in DA3 inference: {e}")
             logger.error(traceback.format_exc())
-
-            # Return placeholder depth map on error
-            if isinstance(image, Image.Image):
-                w, h = image.size
-            elif isinstance(image, list) and len(image) > 0:
-                w, h = image[0].size
-            else:
-                w, h = 512, 512
-
-            dummy_tensor = torch.ones((h, w), device=self.device, dtype=torch.float32)
-            return {"predicted_depth": dummy_tensor}
+            if isinstance(image, Image.Image): w, h = image.size
+            elif isinstance(image, list) and len(image) > 0: w, h = image[0].size
+            else: w, h = 512, 512
+            dummy_depth = torch.ones((h, w), device=self.device, dtype=torch.float32)
+            return DA3Prediction(depth=dummy_depth, supports_pose=False)
 
     def eval(self):
-        """Compatibility method for eval mode."""
-        if hasattr(self.model, 'eval'):
-            self.model.eval()
+        if hasattr(self.model, 'eval'): self.model.eval()
         return self
 
     def to(self, device):
-        """Move model to specified device."""
-        if hasattr(self.model, 'to'):
-            self.model = self.model.to(device)
+        if hasattr(self.model, 'to'): self.model = self.model.to(device)
         self.device = device
         return self
 
@@ -767,21 +845,34 @@ class DepthEstimationNode:
             "required": {
                 "image": ("IMAGE",),
                 "model_name": (get_available_models(),),
-                # Ensure minimum size is enforced by the UI
-                "input_size": ("INT", {"default": 1024, "min": 256, "max": 1024, "step": 1}),
-                "blur_radius": ("FLOAT", {"default": 2.0, "min": 0.0, "max": 10.0, "step": 0.1}),
-                # Define median_size as a dropdown with specific string values
-                "median_size": (cls.MEDIAN_SIZES, {"default": "3"}),
-                "apply_auto_contrast": ("BOOLEAN", {"default": True}),
-                "apply_gamma": ("BOOLEAN", {"default": True})
             },
             "optional": {
+                "input_size": ("INT", {"default": 1024, "min": 384, "max": 8192, "step": 32}),
+                "blur_radius": ("INT", {"default": 0, "min": 0, "max": 100, "step": 1}),
+                "median_size": ("INT", {"default": 0, "min": 0, "max": 100, "step": 1}),
+                "apply_auto_contrast": ("BOOLEAN", {"default": False}),
+                "apply_gamma": ("BOOLEAN", {"default": False}),
                 "force_reload": ("BOOLEAN", {"default": False}),
-                "force_cpu": ("BOOLEAN", {"default": False})
+                "force_cpu": ("BOOLEAN", {"default": False}),
+                "enable_camera_estimation": ("BOOLEAN", {"default": True}),
+                "output_raw_depth": ("BOOLEAN", {"default": False}),
             }
         }
 
-    RETURN_TYPES = ("IMAGE",)
+    RETURN_TYPES = (
+        "IMAGE",
+        "IMAGE",
+        CAMERA_EXTRINSICS,
+        CAMERA_INTRINSICS,
+        "STRING"
+    )
+    RETURN_NAMES = (
+        "depth",
+        "confidence",
+        "extrinsics",
+        "intrinsics",
+        "camera_json"
+    )
     FUNCTION = "estimate_depth"
     CATEGORY = "depth"
     
@@ -843,7 +934,7 @@ class DepthEstimationNode:
                     model_name_lower = model_name.lower()
                     
                     # Prioritized fallback selection logic:
-                    # 1. Try to match on similar name
+                    # 1. Try to find a model with a similar name
                     # 2. Prefer V3 models if V3 was requested (and DA3 is available)
                     # 3. Prefer V2 models if V2 was requested
                     # 4. Prefer smaller models (more reliable)
@@ -959,6 +1050,7 @@ class DepthEstimationNode:
                     )
 
                 logger.info(f"Loading DA3 model: {model_name} using Depth Anything V3 API")
+                da3_model = None
                 try:
                     # Load DA3 model from HuggingFace
                     da3_model = DepthAnything3.from_pretrained(model_path)
@@ -971,7 +1063,11 @@ class DepthEstimationNode:
                     da3_model.eval()
 
                     # Wrap in DA3ModelWrapper for compatibility
-                    self.depth_estimator = DA3ModelWrapper(da3_model, self.device if not force_cpu else 'cpu')
+                    if da3_model is not None:
+                        self.depth_estimator = DA3ModelWrapper(da3_model, self.device if not force_cpu else 'cpu', model_name)
+                    else:
+                        # Fallback (shouldn't happen if check passed)
+                        logger.error("DA3 model loaded as None")
                     self.current_model = model_path
                     logger.info(f"Successfully loaded DA3 model: {model_name}")
                     return
@@ -1881,7 +1977,7 @@ SOLUTION:
                         logger.info(f"Converting input tensor from {image.dtype} to torch.float32")
                         image = image.float()  # Convert to FloatTensor for consistency
                     
-                    # Check for NaN/Inf values in tensor
+                    # Check for NaN/Inf values and fix them
                     nan_count = torch.isnan(image).sum().item()
                     inf_count = torch.isinf(image).sum().item()
                     
@@ -2323,49 +2419,66 @@ SOLUTION:
     def estimate_depth(self, 
                      image: torch.Tensor, 
                      model_name: str, 
-                     input_size: int = 518,
-                     blur_radius: float = 2.0, 
-                     median_size: str = "5", 
-                     apply_auto_contrast: bool = True, 
-                     apply_gamma: bool = True,
+                     input_size: int = 1024,
+                     blur_radius: int = 0, 
+                     median_size: int = 0, 
+                     apply_auto_contrast: bool = False, 
+                     apply_gamma: bool = False,
                      force_reload: bool = False,
-                     force_cpu: bool = False) -> Tuple[torch.Tensor]:
+                     force_cpu: bool = False,
+                     enable_camera_estimation: bool = True,
+                     output_raw_depth: bool = False) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, str]:
         """
         Estimates depth from input image with error handling and cleanup.
         
         Args:
             image: Input image tensor
             model_name: Name of the depth model to use
-            input_size: Target size for the longest dimension of the image (between 256 and 1024)
+            input_size: Target size for the longest dimension of the image (between 384 and 8192)
             blur_radius: Gaussian blur radius for smoothing
             median_size: Size of median filter for noise reduction
             apply_auto_contrast: Whether to enhance contrast automatically
             apply_gamma: Whether to apply gamma correction
             force_reload: Whether to force reload the model
             force_cpu: Whether to force using CPU for inference
+            enable_camera_estimation: Whether to output camera intrinsics/extrinsics (for DA3 models)
+            output_raw_depth: Whether to output the raw, unnormalized depth map (for DA3 models)
             
         Returns:
-            Tuple containing depth map tensor
+            Tuple containing:
+            - depth: Processed depth map tensor (1, H, W, 3)
+            - confidence: Confidence map tensor (1, H, W, 3) or None
+            - extrinsics: Camera extrinsics tensor (1, 3, 4) or None
+            - intrinsics: Camera intrinsics tensor (1, 3, 3) or None
+            - camera_json: JSON string of camera parameters or empty string
         """
         error_image = None
+        camera_data = {}
         start_time = time.time()
         
+        # Initialize all return values to None or empty
+        depth_output = None
+        confidence_output = torch.zeros((1, 512, 512, 3), dtype=torch.float32) # Placeholder for confidence
+        extrinsics_output = None
+        intrinsics_output = None
+        camera_json_output = ""
+
         try:
             # Sanity check inputs and log initial info
-            logger.info(f"Starting depth estimation with model: {model_name}, input_size: {input_size}, force_cpu: {force_cpu}")
+            logger.info(f"Starting depth estimation with model: {model_name}, input_size: {input_size}, force_cpu: {force_cpu}, enable_camera_estimation: {enable_camera_estimation}, output_raw_depth: {output_raw_depth}")
             
             # Enhanced input validation with better error handling
             if image is None:
                 logger.error("Input image is None")
                 error_image = self._create_basic_error_image()
                 self._add_error_text_to_image(error_image, "Input image is None")
-                return (error_image,)
+                return (error_image, confidence_output, extrinsics_output, intrinsics_output, camera_json_output)
             
             if image.numel() == 0:
                 logger.error("Input image is empty (zero elements)")
                 error_image = self._create_basic_error_image()
                 self._add_error_text_to_image(error_image, "Input image is empty (zero elements)")
-                return (error_image,)
+                return (error_image, confidence_output, extrinsics_output, intrinsics_output, camera_json_output)
             
             # Log tensor information before processing
             logger.info(f"Input tensor shape: {image.shape}, dtype: {image.dtype}, device: {image.device}")
@@ -2402,12 +2515,12 @@ SOLUTION:
                         logger.error(f"Cannot automatically reshape tensor with {image.ndim} dimensions")
                         error_image = self._create_basic_error_image()
                         self._add_error_text_to_image(error_image, f"Unsupported tensor dimensions: {image.ndim}D")
-                        return (error_image,)
+                        return (error_image, confidence_output, extrinsics_output, intrinsics_output, camera_json_output)
                 except Exception as reshape_error:
                     logger.error(f"Error reshaping tensor: {str(reshape_error)}")
                     error_image = self._create_basic_error_image()
                     self._add_error_text_to_image(error_image, f"Error reshaping tensor: {str(reshape_error)[:100]}")
-                    return (error_image,)
+                    return (error_image, confidence_output, extrinsics_output, intrinsics_output, camera_json_output)
             
             # Comprehensive type checking and conversion - verify at multiple points
             # 1. Initial type check and convert if needed
@@ -2426,7 +2539,7 @@ SOLUTION:
                     logger.error(f"Error converting tensor type: {str(type_error)}")
                     error_image = self._create_basic_error_image()
                     self._add_error_text_to_image(error_image, f"Type conversion error: {str(type_error)[:100]}")
-                    return (error_image,)
+                    return (error_image, confidence_output, extrinsics_output, intrinsics_output, camera_json_output)
             
             # Create error image placeholder based on input dimensions
             error_image = self._create_error_image(image)
@@ -2454,23 +2567,23 @@ SOLUTION:
             
             # Parameter validation with safer defaults
             # Validate and normalize median_size parameter
-            median_size_str = str(median_size)  # Convert to string regardless of input type
-            if median_size_str not in self.MEDIAN_SIZES:
-                logger.warning(f"Invalid median_size: '{median_size}' (type: {type(median_size)}). Using default '5'.")
-                median_size_str = "5"
+            median_size_int = int(median_size) # Already int from INPUT_TYPES
+            if median_size_int < 0:
+                logger.warning(f"Invalid median_size: '{median_size}'. Using default '0'.")
+                median_size_int = 0
             
             # Validate input_size with stricter bounds
             if not isinstance(input_size, (int, float)):
-                logger.warning(f"Invalid input_size type: {type(input_size)}. Using default 518.")
-                input_size = 518
+                logger.warning(f"Invalid input_size type: {type(input_size)}. Using default 1024.")
+                input_size = 1024
             else:
                 # Convert to int and constrain to valid range
                 try:
                     input_size = int(input_size)
-                    input_size = max(256, min(input_size, 1024))  # Clamp between 256 and 1024
+                    input_size = max(384, min(input_size, 8192))  # Clamp between 384 and 8192
                 except:
-                    logger.warning(f"Error converting input_size to int. Using default 518.")
-                    input_size = 518
+                    logger.warning(f"Error converting input_size to int. Using default 1024.")
+                    input_size = 1024
             
             # Try loading the model with graceful fallback
             try:
@@ -2499,7 +2612,7 @@ SOLUTION:
                 # If we still don't have a model loaded, return error image
                 if self.depth_estimator is None:
                     self._add_error_text_to_image(error_image, f"Model Error: {str(model_error)[:100]}...")
-                    return (error_image,)
+                    return (error_image, confidence_output, extrinsics_output, intrinsics_output, camera_json_output)
             
             # Process input image with enhanced error recovery
             try:
@@ -2567,7 +2680,7 @@ SOLUTION:
                 except Exception as fallback_error:
                     logger.error(f"Fallback image processing also failed: {str(fallback_error)}")
                     self._add_error_text_to_image(error_image, f"Image Error: {str(img_error)[:100]}...")
-                    return (error_image,)
+                    return (error_image, confidence_output, extrinsics_output, intrinsics_output, camera_json_output)
             
             # Depth estimation with comprehensive error handling
             try:
@@ -2600,13 +2713,13 @@ SOLUTION:
                             if force_cpu:
                                 logger.error("Already using CPU but still encountered memory error")
                                 self._add_error_text_to_image(error_image, "Memory error even on CPU. Try smaller input size.")
-                                return (error_image,)
+                                return (error_image, confidence_output, extrinsics_output, intrinsics_output, camera_json_output)
                             else:
                                 # Try CPU fallback
                                 logger.info("Switching to CPU processing")
                                 return self.estimate_depth(
-                                    image.cpu(), model_name, input_size, blur_radius, median_size_str,
-                                    apply_auto_contrast, apply_gamma, True, True  # Force CPU
+                                    image.cpu(), model_name, input_size, blur_radius, median_size,
+                                    apply_auto_contrast, apply_gamma, True, True, enable_camera_estimation, output_raw_depth  # Force CPU
                                 )
                         
                         # Type mismatch errors
@@ -2614,8 +2727,8 @@ SOLUTION:
                             logger.warning("Tensor type mismatch detected. Attempting explicit type conversion.")
                             # Try with explicit CPU conversion
                             return self.estimate_depth(
-                                image.float().cpu(), model_name, input_size, blur_radius, median_size_str,
-                                apply_auto_contrast, apply_gamma, True, True  # Force CPU and reload
+                                image.float().cpu(), model_name, input_size, blur_radius, median_size,
+                                apply_auto_contrast, apply_gamma, True, True, enable_camera_estimation, output_raw_depth  # Force CPU and reload
                             )
                         
                         # Dimension mismatch errors
@@ -2630,40 +2743,86 @@ SOLUTION:
                                 self.ensure_model_loaded("MiDaS-Small", True, True)
                                 # Retry with the new model
                                 return self.estimate_depth(
-                                    image.cpu(), "MiDaS-Small", input_size, blur_radius, median_size_str,
-                                    apply_auto_contrast, apply_gamma, False, True  # Already reloaded, force CPU
+                                    image.cpu(), "MiDaS-Small", input_size, blur_radius, median_size,
+                                    apply_auto_contrast, apply_gamma, False, True, enable_camera_estimation, output_raw_depth  # Already reloaded, force CPU
                                 )
                             except Exception as midas_error:
                                 logger.error(f"MiDaS fallback also failed: {str(midas_error)}")
                                 self._add_error_text_to_image(error_image, f"Inference Error: {str(inference_error)[:100]}...")
-                                return (error_image,)
+                                return (error_image, confidence_output, extrinsics_output, intrinsics_output, camera_json_output)
                         
                         # Other errors - just return error image
                         self._add_error_text_to_image(error_image, f"Inference Error: {str(inference_error)[:100]}...")
-                        return (error_image,)
+                        return (error_image, confidence_output, extrinsics_output, intrinsics_output, camera_json_output)
                     
-                    # Verify depth result and convert to float32
-                    if not isinstance(depth_result, dict) or "predicted_depth" not in depth_result:
-                        logger.error(f"Invalid depth result format: {type(depth_result)}")
-                        self._add_error_text_to_image(error_image, "Invalid depth result format")
-                        return (error_image,)
-                    
-                    # Extract and validate predicted depth
-                    predicted_depth = depth_result["predicted_depth"]
-                    
-                    # Ensure correct tensor type
-                    if not torch.is_tensor(predicted_depth):
-                        logger.error(f"Predicted depth is not a tensor: {type(predicted_depth)}")
-                        self._add_error_text_to_image(error_image, "Predicted depth is not a tensor")
-                        return (error_image,)
-                    
-                    # Convert to float32 if needed
-                    if predicted_depth.dtype != torch.float32:
-                        logger.info(f"Converting predicted depth from {predicted_depth.dtype} to float32")
-                        predicted_depth = predicted_depth.float()
-                    
-                    # Convert to CPU for post-processing
-                    depth_map = predicted_depth.squeeze().cpu().numpy()
+                    # Handle DA3 specific output
+                    if isinstance(depth_result, DA3Prediction):
+                        predicted_depth_tensor = depth_result.depth
+                        if output_raw_depth and depth_result.raw_depth is not None:
+                            # If raw depth is requested and available, use it for the main depth output
+                            # Ensure it's normalized to 0-1 for display purposes, but keep its original range for camera data
+                            raw_depth_for_output = depth_result.raw_depth.squeeze(0).cpu().numpy()
+                            raw_depth_min, raw_depth_max = raw_depth_for_output.min(), raw_depth_for_output.max()
+                            if raw_depth_max - raw_depth_min > 1e-6:
+                                depth_map = (raw_depth_for_output - raw_depth_min) / (raw_depth_max - raw_depth_min)
+                            else:
+                                depth_map = np.zeros_like(raw_depth_for_output)
+                        else:
+                            depth_map = predicted_depth_tensor.squeeze(0).cpu().numpy()
+
+                        if depth_result.confidence is not None:
+                            confidence_output = depth_result.confidence.unsqueeze(0) # Add batch dim
+                            confidence_output = torch.stack([confidence_output.squeeze()] * 3, dim=-1) # Convert to RGB for ComfyUI
+                        
+                        if enable_camera_estimation and depth_result.supports_pose:
+                            if depth_result.extrinsics is not None:
+                                extrinsics_output = depth_result.extrinsics.unsqueeze(0) # Add batch dim
+                            if depth_result.intrinsics is not None:
+                                intrinsics_output = depth_result.intrinsics.unsqueeze(0) # Add batch dim
+                            
+                            # Prepare camera_json_output
+                            if extrinsics_output is not None and intrinsics_output is not None:
+                                import json
+                                camera_params = {
+                                    "extrinsics": extrinsics_output.squeeze(0).cpu().numpy().tolist(),
+                                    "intrinsics": intrinsics_output.squeeze(0).cpu().numpy().tolist(),
+                                    "image_width": original_width,
+                                    "image_height": original_height,
+                                    "depth_min": float(depth_result.raw_depth.min().cpu().numpy()) if depth_result.raw_depth is not None else 0.0,
+                                    "depth_max": float(depth_result.raw_depth.max().cpu().numpy()) if depth_result.raw_depth is not None else 1.0,
+                                    "model_name": model_name
+                                }
+                                camera_json_output = json.dumps(camera_params, indent=2)
+                                logger.info("Camera parameters extracted and formatted to JSON.")
+                            else:
+                                logger.warning("Camera estimation enabled but extrinsics or intrinsics were None.")
+                        else:
+                            logger.info("Camera estimation disabled or not supported by model.")
+
+                    else: # Handle V1/V2/MiDaS pipeline output
+                        # Verify depth result and convert to float32
+                        if not isinstance(depth_result, dict) or "predicted_depth" not in depth_result:
+                            logger.error(f"Invalid depth result format: {type(depth_result)}")
+                            self._add_error_text_to_image(error_image, "Invalid depth result format")
+                            return (error_image, confidence_output, extrinsics_output, intrinsics_output, camera_json_output)
+                        
+                        # Extract and validate predicted depth
+                        predicted_depth_tensor = depth_result["predicted_depth"]
+                        
+                        # Ensure correct tensor type
+                        if not torch.is_tensor(predicted_depth_tensor):
+                            logger.error(f"Predicted depth is not a tensor: {type(predicted_depth_tensor)}")
+                            self._add_error_text_to_image(error_image, "Predicted depth is not a tensor")
+                            return (error_image, confidence_output, extrinsics_output, intrinsics_output, camera_json_output)
+                        
+                        # Convert to float32 if needed
+                        if predicted_depth_tensor.dtype != torch.float32:
+                            logger.info(f"Converting predicted depth from {predicted_depth_tensor.dtype} to float32")
+                            predicted_depth_tensor = predicted_depth_tensor.float()
+                        
+                        # Convert to CPU for post-processing
+                        depth_map = predicted_depth_tensor.squeeze().cpu().numpy()
+
             except RuntimeError as rt_error:
                 # Handle runtime errors separately for clearer error messages
                 error_msg = str(rt_error)
@@ -2678,8 +2837,8 @@ SOLUTION:
                         try:
                             logger.info("Switching to CPU processing")
                             return self.estimate_depth(
-                                image.cpu(), model_name, input_size, blur_radius, median_size_str,
-                                apply_auto_contrast, apply_gamma, True, True  # Force reload and CPU
+                                image.cpu(), model_name, input_size, blur_radius, median_size,
+                                apply_auto_contrast, apply_gamma, True, True, enable_camera_estimation, output_raw_depth  # Force reload and CPU
                             )
                         except Exception as cpu_error:
                             logger.error(f"CPU fallback failed: {str(cpu_error)}")
@@ -2689,14 +2848,14 @@ SOLUTION:
                     # Generic runtime error
                     self._add_error_text_to_image(error_image, f"Runtime Error: {error_msg[:100]}...")
                 
-                return (error_image,)
+                return (error_image, confidence_output, extrinsics_output, intrinsics_output, camera_json_output)
             except Exception as e:
                 # Handle other exceptions
                 error_msg = f"Depth estimation failed: {str(e)}"
                 logger.error(error_msg)
                 logger.error(traceback.format_exc())
                 self._add_error_text_to_image(error_image, f"Error: {str(e)[:100]}...")
-                return (error_image,)
+                return (error_image, confidence_output, extrinsics_output, intrinsics_output, camera_json_output)
             
             # Validate depth map
             # Check for NaN/Inf values
@@ -2708,7 +2867,7 @@ SOLUTION:
             if depth_map.size == 0:
                 logger.error("Depth map is empty")
                 self._add_error_text_to_image(error_image, "Empty depth map returned")
-                return (error_image,)
+                return (error_image, confidence_output, extrinsics_output, intrinsics_output, camera_json_output)
             
             # Post-processing with enhanced error handling
             try:
@@ -2816,7 +2975,7 @@ SOLUTION:
                 if h <= 1 or w <= 1:
                     logger.error(f"Invalid depth map dimensions: {h}x{w}")
                     self._add_error_text_to_image(error_image, "Invalid depth map dimensions (too small)")
-                    return (error_image,)
+                    return (error_image, confidence_output, extrinsics_output, intrinsics_output, camera_json_output)
                 
                 # Log final dimensions for debugging
                 logger.info(f"Final depth map dimensions: {h}x{w}")
@@ -2848,7 +3007,7 @@ SOLUTION:
                 logger.info(f"Depth processing completed in {processing_time:.2f} seconds")
                 logger.info(f"Output tensor: shape={depth_tensor.shape}, dtype={depth_tensor.dtype}, device={depth_tensor.device}")
                 
-                return (depth_tensor,)
+                return (depth_tensor, confidence_output, extrinsics_output, intrinsics_output, camera_json_output)
                 
             except Exception as post_error:
                 # Handle post-processing errors
@@ -2856,7 +3015,7 @@ SOLUTION:
                 logger.error(error_msg)
                 logger.error(traceback.format_exc())
                 self._add_error_text_to_image(error_image, f"Post-processing Error: {str(post_error)[:100]}...")
-                return (error_image,)
+                return (error_image, confidence_output, extrinsics_output, intrinsics_output, camera_json_output)
                 
         except Exception as e:
             # Global catch-all error handler
@@ -2869,7 +3028,7 @@ SOLUTION:
                 error_image = self._create_basic_error_image()
                 
             self._add_error_text_to_image(error_image, f"Unexpected Error: {str(e)[:100]}...")
-            return (error_image,)
+            return (error_image, confidence_output, extrinsics_output, intrinsics_output, camera_json_output)
         finally:
             # Always clean up resources regardless of success or failure
             torch.cuda.empty_cache()
