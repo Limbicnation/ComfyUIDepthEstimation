@@ -701,13 +701,15 @@ class DA3ModelWrapper:
         logger.info(f"DA3ModelWrapper initialized: {model_name}, Pose support: {self.supports_pose}, Device: {device}")
 
     def _check_pose_support(self, model_name: str) -> bool:
+        """Check if model supports camera pose estimation (DA3 variants only)."""
         model_lower = model_name.lower()
+        # Mono/metric variants don't support pose estimation
         if "mono" in model_lower or "metric" in model_lower:
             return False
-        if "v3" in model_lower or "da3" in model_lower:
-            if any(variant in model_lower for variant in ["small", "base", "large", "giant", "nested"]):
-                return True
-        return False
+        # DA3 models with size variants support pose estimation
+        is_da3 = "v3" in model_lower or "da3" in model_lower
+        size_variants = ["small", "base", "large", "giant", "nested"]
+        return is_da3 and any(v in model_lower for v in size_variants)
 
     def __call__(self, image: Union[Image.Image, List[Image.Image]]) -> DA3Prediction:
         try:
@@ -761,14 +763,13 @@ class DA3ModelWrapper:
                 proc_array = prediction.processed_images
                 processed_tensor = torch.from_numpy(proc_array).to(self.device)
 
-            # Handle single image case
+            # Handle single image case - squeeze batch dimension from all tensors
             if not is_batch:
-                depth_tensor = depth_tensor.squeeze(0)
-                raw_depth_tensor = raw_depth_tensor.squeeze(0)
-                if confidence_tensor is not None: confidence_tensor = confidence_tensor.squeeze(0)
-                if extrinsics_tensor is not None: extrinsics_tensor = extrinsics_tensor.squeeze(0)
-                if intrinsics_tensor is not None: intrinsics_tensor = intrinsics_tensor.squeeze(0)
-                if processed_tensor is not None: processed_tensor = processed_tensor.squeeze(0)
+                tensors = [depth_tensor, raw_depth_tensor, confidence_tensor,
+                           extrinsics_tensor, intrinsics_tensor, processed_tensor]
+                depth_tensor, raw_depth_tensor, confidence_tensor, \
+                    extrinsics_tensor, intrinsics_tensor, processed_tensor = \
+                    [t.squeeze(0) if t is not None else None for t in tensors]
 
             return DA3Prediction(
                 depth=depth_tensor,
@@ -848,8 +849,8 @@ class DepthEstimationNode:
             },
             "optional": {
                 "input_size": ("INT", {"default": 1024, "min": 384, "max": 8192, "step": 32}),
-                "blur_radius": ("INT", {"default": 0, "min": 0, "max": 100, "step": 1}),
-                "median_size": ("INT", {"default": 0, "min": 0, "max": 100, "step": 1}),
+                "blur_radius": ("FLOAT", {"default": 0.0, "min": 0.0, "max": 100.0, "step": 0.1}),
+                "median_size": ("INT", {"default": 0, "min": 0, "max": 21, "step": 2}),  # Odd values only, max 21 for PIL
                 "apply_auto_contrast": ("BOOLEAN", {"default": False}),
                 "apply_gamma": ("BOOLEAN", {"default": False}),
                 "force_reload": ("BOOLEAN", {"default": False}),
@@ -2410,11 +2411,116 @@ SOLUTION:
         """Convert PIL Image back to tensor."""
         img_np = np.array(pil_img).astype(np.float32) / 255.0
         tensor = torch.from_numpy(img_np).unsqueeze(0)
-        
+
         if self.device is not None:
             tensor = tensor.to(self.device)
-            
+
         return tensor
+
+    def _serialize_camera_data(
+        self,
+        extrinsics: Optional[torch.Tensor],
+        intrinsics: Optional[torch.Tensor],
+        confidence: Optional[torch.Tensor],
+        raw_depth: Optional[torch.Tensor],
+        model_name: str,
+        image_width: int,
+        image_height: int
+    ) -> str:
+        """
+        Serialize camera data to comprehensive JSON string.
+
+        Args:
+            extrinsics: [N, 3, 4] camera extrinsics (opencv w2c format)
+            intrinsics: [N, 3, 3] camera intrinsics
+            confidence: [N, H, W] confidence maps (optional)
+            raw_depth: [N, H, W] raw depth values (optional)
+            model_name: Name of the model used
+            image_width: Original image width
+            image_height: Original image height
+
+        Returns:
+            JSON string with camera parameters and metadata
+        """
+        import json
+
+        data = {
+            "format_version": "1.0",
+            "model": model_name,
+            "timestamp": time.time(),
+            "image_width": image_width,
+            "image_height": image_height,
+        }
+
+        # Serialize extrinsics
+        if extrinsics is not None:
+            ext_np = extrinsics.cpu().numpy()
+            num_views = ext_np.shape[0] if ext_np.ndim == 3 else 1
+            data["num_views"] = num_views
+
+            if ext_np.ndim == 3:  # Batch [N, 3, 4]
+                data["extrinsics"] = [
+                    {
+                        "matrix": ext.tolist(),
+                        "format": "opencv_w2c",
+                        "rotation": ext[:3, :3].tolist(),
+                        "translation": ext[:3, 3].tolist() if ext.shape[1] > 3 else [0, 0, 0]
+                    }
+                    for ext in ext_np
+                ]
+            else:  # Single [3, 4]
+                data["extrinsics"] = [{
+                    "matrix": ext_np.tolist(),
+                    "format": "opencv_w2c",
+                    "rotation": ext_np[:3, :3].tolist(),
+                    "translation": ext_np[:3, 3].tolist() if ext_np.shape[1] > 3 else [0, 0, 0]
+                }]
+
+        # Serialize intrinsics
+        if intrinsics is not None:
+            int_np = intrinsics.cpu().numpy()
+
+            if int_np.ndim == 3:  # Batch [N, 3, 3]
+                data["intrinsics"] = [
+                    {
+                        "matrix": intr.tolist(),
+                        "fx": float(intr[0, 0]),
+                        "fy": float(intr[1, 1]),
+                        "cx": float(intr[0, 2]),
+                        "cy": float(intr[1, 2])
+                    }
+                    for intr in int_np
+                ]
+            else:  # Single [3, 3]
+                data["intrinsics"] = [{
+                    "matrix": int_np.tolist(),
+                    "fx": float(int_np[0, 0]),
+                    "fy": float(int_np[1, 1]),
+                    "cx": float(int_np[0, 2]),
+                    "cy": float(int_np[1, 2])
+                }]
+
+        # Add depth statistics
+        if raw_depth is not None:
+            depth_np = raw_depth.cpu().numpy()
+            data["depth_stats"] = {
+                "min": float(depth_np.min()),
+                "max": float(depth_np.max()),
+                "mean": float(depth_np.mean()),
+                "std": float(depth_np.std())
+            }
+
+        # Add confidence statistics if available
+        if confidence is not None:
+            conf_np = confidence.cpu().numpy()
+            data["confidence_stats"] = {
+                "mean": float(conf_np.mean()),
+                "std": float(conf_np.std()),
+                "min": float(conf_np.min()),
+                "max": float(conf_np.max())
+            }
+
+        return json.dumps(data, indent=2)
 
     def estimate_depth(self, 
                      image: torch.Tensor, 
@@ -2458,7 +2564,12 @@ SOLUTION:
         
         # Initialize all return values to None or empty
         depth_output = None
-        confidence_output = torch.zeros((1, 512, 512, 3), dtype=torch.float32) # Placeholder for confidence
+        # Get input dimensions for dynamic placeholder sizing
+        if image is not None and hasattr(image, 'shape') and len(image.shape) >= 3:
+            img_h, img_w = image.shape[1], image.shape[2]
+        else:
+            img_h, img_w = 512, 512  # Fallback only if input is invalid
+        confidence_output = torch.zeros((1, img_h, img_w, 3), dtype=torch.float32, device=image.device if hasattr(image, 'device') else 'cpu')
         extrinsics_output = None
         intrinsics_output = None
         camera_json_output = ""
@@ -2771,35 +2882,73 @@ SOLUTION:
                             depth_map = predicted_depth_tensor.squeeze(0).cpu().numpy()
 
                         if depth_result.confidence is not None:
-                            confidence_output = depth_result.confidence.unsqueeze(0) # Add batch dim
-                            confidence_output = torch.stack([confidence_output.squeeze()] * 3, dim=-1) # Convert to RGB for ComfyUI
-                        
+                            conf = depth_result.confidence
+                            # Ensure batch dimension [N, H, W]
+                            if conf.ndim == 2:
+                                conf = conf.unsqueeze(0)  # [H, W] -> [1, H, W]
+                            # Convert to RGB format [N, H, W, 3] for ComfyUI IMAGE type
+                            confidence_output = conf.unsqueeze(-1).repeat(1, 1, 1, 3)  # [N, H, W, 3]
+
                         if enable_camera_estimation and depth_result.supports_pose:
                             if depth_result.extrinsics is not None:
-                                extrinsics_output = depth_result.extrinsics.unsqueeze(0) # Add batch dim
+                                ext = depth_result.extrinsics
+                                # Ensure batch dimension for single image case
+                                if ext.ndim == 2:  # [3, 4] -> [1, 3, 4]
+                                    extrinsics_output = ext.unsqueeze(0)
+                                else:  # Already [N, 3, 4]
+                                    extrinsics_output = ext
                             if depth_result.intrinsics is not None:
-                                intrinsics_output = depth_result.intrinsics.unsqueeze(0) # Add batch dim
+                                intr = depth_result.intrinsics
+                                # Ensure batch dimension for single image case
+                                if intr.ndim == 2:  # [3, 3] -> [1, 3, 3]
+                                    intrinsics_output = intr.unsqueeze(0)
+                                else:  # Already [N, 3, 3]
+                                    intrinsics_output = intr
                             
                             # Prepare camera_json_output
-                            if extrinsics_output is not None and intrinsics_output is not None:
-                                import json
-                                camera_params = {
-                                    "extrinsics": extrinsics_output.squeeze(0).cpu().numpy().tolist(),
-                                    "intrinsics": intrinsics_output.squeeze(0).cpu().numpy().tolist(),
-                                    "image_width": original_width,
-                                    "image_height": original_height,
-                                    "depth_min": float(depth_result.raw_depth.min().cpu().numpy()) if depth_result.raw_depth is not None else 0.0,
-                                    "depth_max": float(depth_result.raw_depth.max().cpu().numpy()) if depth_result.raw_depth is not None else 1.0,
-                                    "model_name": model_name
-                                }
-                                camera_json_output = json.dumps(camera_params, indent=2)
-                                logger.info("Camera parameters extracted and formatted to JSON.")
-                            else:
-                                logger.warning("Camera estimation enabled but extrinsics or intrinsics were None.")
+                            # Prepare camera_json_output using the helper method
+                            try:
+                                camera_json_output = self._serialize_camera_data(
+                                    extrinsics=depth_result.extrinsics,
+                                    intrinsics=depth_result.intrinsics,
+                                    confidence=depth_result.confidence,
+                                    raw_depth=depth_result.raw_depth,
+                                    model_name=model_name,
+                                    image_width=original_width,
+                                    image_height=original_height
+                                )
+                                logger.info(f"Camera JSON generated successfully. Length: {len(camera_json_output)}")
+                                # Explicit print for user debugging as requested
+                                print(f"DA3 Camera JSON Output (first 200 chars): {camera_json_output[:200]}...")
+                            except Exception as json_error:
+                                logger.error(f"Error serializing camera data: {str(json_error)}")
+                                logger.error(traceback.format_exc())
+                                camera_json_output = json.dumps({"error": str(json_error)})
                         else:
                             logger.info("Camera estimation disabled or not supported by model.")
+                            # Still output informative JSON even without camera data
+                            camera_json_output = json.dumps({
+                                "status": "camera_estimation_unavailable",
+                                "reason": "disabled" if not enable_camera_estimation else "model_does_not_support_pose",
+                                "model": model_name,
+                                "supports_pose": depth_result.supports_pose,
+                                "enable_camera_estimation": enable_camera_estimation,
+                                "extrinsics_available": depth_result.extrinsics is not None,
+                                "intrinsics_available": depth_result.intrinsics is not None,
+                                "image_width": original_width,
+                                "image_height": original_height
+                            }, indent=2)
 
                     else: # Handle V1/V2/MiDaS pipeline output
+                        # V1/V2/MiDaS don't support camera estimation - output informative JSON
+                        camera_json_output = json.dumps({
+                            "status": "not_supported",
+                            "reason": "model_type_does_not_support_camera_estimation",
+                            "model": model_name,
+                            "message": "Camera pose estimation requires Depth-Anything-V3 models",
+                            "image_width": original_width,
+                            "image_height": original_height
+                        }, indent=2)
                         # Verify depth result and convert to float32
                         if not isinstance(depth_result, dict) or "predicted_depth" not in depth_result:
                             logger.error(f"Invalid depth result format: {type(depth_result)}")
@@ -2927,10 +3076,13 @@ SOLUTION:
                     except Exception as blur_error:
                         logger.warning(f"Error applying blur: {str(blur_error)}. Skipping.")
                 
-                # Apply median filter if size is valid
+                # Apply median filter if size is valid (must be odd number > 1)
                 try:
-                    median_size_int = int(median_size_str)
-                    if median_size_int > 0:
+                    median_size_int = int(median_size) if median_size is not None else 0
+                    # Ensure median size is odd (PIL requirement) - round up to nearest odd
+                    if median_size_int > 1:
+                        if median_size_int % 2 == 0:
+                            median_size_int += 1  # Make odd
                         depth_pil = depth_pil.filter(ImageFilter.MedianFilter(size=median_size_int))
                 except Exception as median_error:
                     logger.warning(f"Error applying median filter: {str(median_error)}. Skipping.")
@@ -3006,7 +3158,7 @@ SOLUTION:
                 processing_time = time.time() - start_time
                 logger.info(f"Depth processing completed in {processing_time:.2f} seconds")
                 logger.info(f"Output tensor: shape={depth_tensor.shape}, dtype={depth_tensor.dtype}, device={depth_tensor.device}")
-                
+
                 return (depth_tensor, confidence_output, extrinsics_output, intrinsics_output, camera_json_output)
                 
             except Exception as post_error:

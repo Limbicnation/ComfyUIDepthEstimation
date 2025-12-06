@@ -72,8 +72,6 @@ Critical dependencies include:
   - `model_name`: Selector for models (e.g., "Depth-Anything-V2-Small").
   - `input_size`: Resolution for inference (default 1024).
   - `blur_radius`, `median_size`: Smoothing parameters.
-- `input_size`: Resolution for inference (default 1024).
-  - `blur_radius`, `median_size`: Smoothing parameters.
   - `force_cpu`: Option to offload VRAM.
 
 ## Recent Updates (DA3 Integration)
