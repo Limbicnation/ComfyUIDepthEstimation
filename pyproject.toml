@@ -1,7 +1,7 @@
 [project]
 name = "comfyuidepthestimation"
 description = "A robust custom depth estimation node for ComfyUI using Depth-Anything models (V1, V2, and V3/DA3). It integrates depth estimation with configurable post-processing options including blur, median filtering, contrast enhancement, and gamma correction."
-version = "1.3.3"
+version = "1.3.4"
 license = { file = "LICENSE" }
 dependencies = [
     "transformers>=4.20.0",
