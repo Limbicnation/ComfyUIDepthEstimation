@@ -12,7 +12,7 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("DepthEstimation")
 
 # Version info
-__version__ = "1.3.3"
+__version__ = "1.3.6"
 
 # Node class mappings - will be populated based on dependency checks
 NODE_CLASS_MAPPINGS = {}
@@ -58,19 +58,20 @@ for module_name, min_version in required_dependencies.items():
 
 # Check optional DA3 dependencies
 for module_name, min_version in optional_dependencies.items():
+    module_version = None  # Initialize BEFORE try block to fix scoping issue
     try:
         module = __import__(module_name)
         module_version = getattr(module, "__version__", "0.0.0")
-        
+
         logger.info(f"Found optional {module_name} version {module_version}")
-        
+
     except ImportError:
         logger.info(f"Optional dependency {module_name} not installed. DA3 models will not be available.")
     except Exception as e:
         logger.warning(f"Error checking version for {module_name}: {e}. DA3 models might not work correctly.")
 
-    # Version comparison
-    if module_name == "depth_anything_3" and "module_version" in locals():
+    # Version comparison - now module_version is always defined
+    if module_name == "depth_anything_3" and module_version is not None:
         try:
             # Compare versions. This simple check works for "X.Y.Z" formats.
             if tuple(map(int, module_version.split('.'))) >= tuple(map(int, min_version.split('.'))):
