@@ -30,16 +30,21 @@ except ImportError:
     TIMM_AVAILABLE = False
     print("Warning: timm not available. Direct loading of Depth Anything models may not work.")
 
+# Get logger instance (basicConfig is called in __init__.py)
+logger = logging.getLogger("DepthEstimation")
+
 # Import DA3 availability status from the package's __init__
 from . import DA3_AVAILABLE
 
 # Conditionally import Depth Anything V3 if available
+# Use defensive import guard to handle edge cases where DA3_AVAILABLE check passes
+# but the actual import still fails (e.g., corrupted install, version mismatch)
 if DA3_AVAILABLE:
-    from depth_anything_3.api import DepthAnything3
-
-# Setup logging
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger("DepthEstimation")
+    try:
+        from depth_anything_3.api import DepthAnything3
+    except ImportError as e:
+        DA3_AVAILABLE = False
+        logger.warning(f"DA3 import failed despite availability check: {e}. DA3 models disabled.")
 
 # Depth Anything V2 Implementation
 class DepthAnythingV2(nn.Module):
