@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-ComfyUI Depth Estimation Node is a custom node for ComfyUI that provides depth map generation from images using Depth-Anything models (V1, V2, and V3). The node integrates with ComfyUI's workflow system and provides configurable post-processing options. **Version 1.3.4+ adds Depth-Anything V3 support with camera pose estimation (extrinsics/intrinsics).**
+ComfyUI Depth Estimation Node is a custom node for ComfyUI that provides depth map generation from images using Depth-Anything models (V1, V2, and V3). The node integrates with ComfyUI's workflow system and provides configurable post-processing options. **Version 1.3.4+ adds Depth-Anything V3 support with camera pose estimation (extrinsics/intrinsics). Version 1.3.6 fixes import robustness for RunPod/PyTorch nightly environments.**
 
 ## Development Commands
 
@@ -37,6 +37,8 @@ The project uses ComfyUI Registry for distribution:
 - Creates placeholder error nodes if dependencies are missing
 - Registers the node with ComfyUI via `NODE_CLASS_MAPPINGS` and `NODE_DISPLAY_NAME_MAPPINGS`
 - Falls back to error nodes with helpful messages if imports fail
+- **Important**: Variables in optional dependency loops must be initialized BEFORE try blocks to avoid scoping issues
+- Configures logging via `logging.basicConfig()` - library modules should NOT call this (only `__init__.py`)
 
 ### Main Implementation: `depth_estimation_node.py`
 
@@ -156,6 +158,13 @@ When modifying or extending this node:
 3. **VRAM issues**: Use smaller models or enable `force_cpu` flag
 4. **DA3 not available**: Node gracefully hides DA3 models if depth_anything_3 not installed
 5. **Median filter**: PIL requires odd integers > 1; validation added
+6. **PyTorch nightly builds**: v1.3.6 adds defensive import guards for edge cases on RunPod and similar environments
+
+## Version History
+
+- **v1.3.6** (2025-12-08): Fixed scoping bug in optional dependency checker, added defensive import guards for DA3, improved compatibility with PyTorch nightly builds
+- **v1.3.5**: DA3 camera pose estimation feature release
+- **v1.3.4**: Initial Depth-Anything V3 integration
 
 ## File Locations
 
