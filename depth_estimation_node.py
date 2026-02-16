@@ -1,23 +1,25 @@
-import os
-import json
-import numpy as np
-import torch
-import traceback
-import time
-import requests
-import urllib.request
-import wget
-from pathlib import Path
-from transformers import pipeline
-from PIL import Image, ImageFilter, ImageOps, ImageDraw, ImageFont
-import folder_paths
-from comfy.model_management import get_torch_device, get_free_memory
 import gc
+import json
 import logging
+import os
+import time
+import traceback
+import urllib.request
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Tuple, List, Dict, Any, Optional, Union
+
+import numpy as np
+import requests
+import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from typing import Tuple, List, Dict, Any, Optional, Union
-from dataclasses import dataclass
+import wget
+from PIL import Image, ImageFilter, ImageOps, ImageDraw, ImageFont
+from transformers import pipeline
+
+import folder_paths
+from comfy.model_management import get_torch_device, get_free_memory
 
 # Custom ComfyUI type definitions for camera parameters
 CAMERA_EXTRINSICS = "CAMERA_EXTRINSICS"
@@ -2448,8 +2450,6 @@ SOLUTION:
         Returns:
             JSON string with camera parameters and metadata
         """
-        import json
-
         data = {
             "format_version": "1.0",
             "model": model_name,
