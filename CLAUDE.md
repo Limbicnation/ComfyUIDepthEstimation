@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-ComfyUI Depth Estimation Node is a custom node for ComfyUI that provides depth map generation from images using Depth-Anything models (V1, V2, and V3). The node integrates with ComfyUI's workflow system and provides configurable post-processing options. **Version 1.3.4+ adds Depth-Anything V3 support with camera pose estimation (extrinsics/intrinsics). Version 1.3.7 fixes missing `import json` (#18) and cleans up PEP 8 import ordering.**
+ComfyUI Depth Estimation Node is a custom node for ComfyUI that provides depth map generation from images using Depth-Anything models (V1, V2, and V3). The node integrates with ComfyUI's workflow system and provides configurable post-processing options. **Version 1.3.4+ adds Depth-Anything V3 support with camera pose estimation (extrinsics/intrinsics). Version 1.3.8 adds DA3 v1.1 models and fixes duplicate error message.**
 
 ## Development Commands
 
@@ -46,7 +46,8 @@ The project uses ComfyUI Registry for distribution:
 The node supports multiple depth estimation models defined in `DEPTH_MODELS` dictionary:
 - **Depth-Anything V1**: Small, Base, Large variants
 - **Depth-Anything V2**: Small, Base variants
-- **Depth-Anything V3**: Small, Base variants (Apache 2.0, with camera pose estimation)
+- **Depth-Anything V3**: Small, Base, Large, Giant, Nested-Giant-Large, Mono-Large, Metric-Large variants
+- **Depth-Anything V3 v1.1**: Large-1.1, Giant-1.1, Nested-Giant-Large-1.1 (updated models with improved performance)
 
 Each model entry includes: HuggingFace path, VRAM requirements, direct download URL, model type, encoder type, and `supports_pose` flag.
 
@@ -163,6 +164,7 @@ When modifying or extending this node:
 
 ## Version History
 
+- **v1.3.8** (2026-03-09): Added DA3 v1.1 models (Large-1.1, Giant-1.1, Nested-Giant-Large-1.1), fixed duplicate error message in DA3 loading
 - **v1.3.7** (2026-02-16): Fixed missing `import json` causing NameError (#18), PEP 8 import grouping, removed redundant local import
 - **v1.3.6** (2025-12-08): Fixed scoping bug in optional dependency checker, added defensive import guards for DA3, improved compatibility with PyTorch nightly builds
 - **v1.3.5**: DA3 camera pose estimation feature release

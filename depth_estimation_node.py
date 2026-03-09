@@ -389,6 +389,37 @@ DEPTH_MODELS = {
         "params": "350M",
         "note": "Metric depth only, no camera estimation"
     },
+    "Depth-Anything-V3-Large-1.1": {
+        "path": "depth-anything/DA3-LARGE-1.1",
+        "vram_mb": 4000,
+        "model_type": "v3",
+        "encoder": "vitl",
+        "license": "Apache-2.0",
+        "supports_batch": True,
+        "supports_pose": True,
+        "params": "350M"
+    },
+    "Depth-Anything-V3-Giant-1.1": {
+        "path": "depth-anything/DA3-GIANT-1.1",
+        "vram_mb": 6000,
+        "model_type": "v3",
+        "encoder": "vitg",
+        "license": "CC BY-NC 4.0",
+        "supports_batch": True,
+        "supports_pose": True,
+        "params": "1.15B"
+    },
+    "Depth-Anything-V3-Nested-Giant-Large-1.1": {
+        "path": "depth-anything/DA3NESTED-GIANT-LARGE-1.1",
+        "vram_mb": 7000,
+        "model_type": "v3",
+        "encoder": "nested",
+        "license": "CC BY-NC 4.0",
+        "supports_batch": True,
+        "supports_pose": True,
+        "metric_scaling": True,
+        "params": "1.4B"
+    },
 }
 
 class MiDaSWrapper:
@@ -1052,8 +1083,6 @@ class DepthEstimationNode:
             if model_type == "v3":
                 if not DA3_AVAILABLE:
                     raise RuntimeError(
-                        f"DA3 model '{model_name}' requested but depth_anything_v3 package not installed. "
-                        "Please install with: pip install depth-anything-v3"
                         f"DA3 model '{model_name}' requested but depth_anything_3 package not installed. "
                         "Please install with: pip install depth-anything-3"
                     )
