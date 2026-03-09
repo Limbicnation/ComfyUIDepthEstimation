@@ -12,14 +12,11 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("DepthEstimation")
 
 # Version info
-__version__ = "1.3.9"
+__version__ = "1.3.10"
 
 # Node class mappings - will be populated based on dependency checks
 NODE_CLASS_MAPPINGS = {}
 NODE_DISPLAY_NAME_MAPPINGS = {}
-
-# Web extension info for ComfyUI
-WEB_DIRECTORY = "./js"
 
 # Graceful dependency checking
 required_dependencies = {
@@ -152,11 +149,4 @@ else:
             "DepthEstimationNode": "Depth Estimation (Error)"
         }
 
-# Module exports
-__all__ = [
-    "NODE_CLASS_MAPPINGS",
-    "NODE_DISPLAY_NAME_MAPPINGS",
-    "__version__",
-    "WEB_DIRECTORY",
-    "DA3_AVAILABLE"
-]
+__all__ = ["NODE_CLASS_MAPPINGS", "NODE_DISPLAY_NAME_MAPPINGS", "__version__"]
