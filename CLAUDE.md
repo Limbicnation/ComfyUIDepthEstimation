@@ -164,6 +164,7 @@ When modifying or extending this node:
 
 ## Version History
 
+- **v1.3.9** (2026-03-09): Version bump to republish after registry conflict (v1.3.8 was claimed by a reverted commit)
 - **v1.3.8** (2026-03-09): Added DA3 v1.1 models (Large-1.1, Giant-1.1, Nested-Giant-Large-1.1), fixed duplicate error message in DA3 loading
 - **v1.3.7** (2026-02-16): Fixed missing `import json` causing NameError (#18), PEP 8 import grouping, removed redundant local import
 - **v1.3.6** (2025-12-08): Fixed scoping bug in optional dependency checker, added defensive import guards for DA3, improved compatibility with PyTorch nightly builds
