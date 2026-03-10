@@ -8,7 +8,7 @@ dependencies = [
     "tokenizers>=0.13.3",
     "timm>=0.6.12",
     "huggingface-hub>=0.16.0",
-    "protobuf==3.20.3",
+    "protobuf>=3.20.3",
     "requests>=2.27.0",
     "wget>=3.2"
 ]

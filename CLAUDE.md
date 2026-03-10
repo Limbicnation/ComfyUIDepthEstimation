@@ -154,7 +154,7 @@ When modifying or extending this node:
 
 ## Known Issues and Workarounds
 
-1. **Protobuf errors**: Fixed by pinning to protobuf==3.20.3
+1. **Protobuf errors**: Minimum version protobuf>=3.20.3 (works with both 3.x and 4.x+)
 2. **Model download failures**: Node includes retry logic and fallback URLs
 3. **VRAM issues**: Use smaller models or enable `force_cpu` flag
 4. **DA3 not available**: Node gracefully hides DA3 models if depth_anything_3 not installed

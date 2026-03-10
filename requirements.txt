@@ -1,7 +1,8 @@
 # requirements.txt for ComfyUI-DepthEstimation Node
 # Note: These are minimum requirements. ComfyUI's environment may provide newer versions.
 
-# Fix for protobuf errors with transformers
+# Protobuf - minimum version for transformers compatibility
+# Note: protobuf 4.x+ works with modern transformers; the old ==3.20.3 pin is no longer needed
 protobuf>=3.20.3
 
 # Core dependencies
