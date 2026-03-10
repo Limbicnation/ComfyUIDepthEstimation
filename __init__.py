@@ -12,7 +12,7 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("DepthEstimation")
 
 # Version info
-__version__ = "1.3.10"
+__version__ = "1.3.11"
 
 # Node class mappings - will be populated based on dependency checks
 NODE_CLASS_MAPPINGS = {}
@@ -136,7 +136,7 @@ else:
             
             def error_message(self):
                 if "Descriptors cannot be created directly" in str(e):
-                    message = "Protobuf version conflict. Run: pip install protobuf==3.20.3"
+                    message = "Protobuf version conflict. Run: pip install protobuf>=3.20.3"
                 else:
                     message = f"Error loading depth estimation: {str(e)}"
                 return (message,)

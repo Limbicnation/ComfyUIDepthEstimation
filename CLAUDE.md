@@ -164,6 +164,7 @@ When modifying or extending this node:
 
 ## Version History
 
+- **v1.3.11** (2026-03-10): Relaxed protobuf pin from ==3.20.3 to >=3.20.3 for DA3/onnx compatibility, removed accidental files from repo
 - **v1.3.10** (2026-03-09): Removed phantom WEB_DIRECTORY (no js/ dir exists), cleaned up __all__ exports, version bump for registry
 - **v1.3.9** (2026-03-09): Version bump to republish after registry conflict (v1.3.8 was claimed by a reverted commit)
 - **v1.3.8** (2026-03-09): Added DA3 v1.1 models (Large-1.1, Giant-1.1, Nested-Giant-Large-1.1), fixed duplicate error message in DA3 loading
